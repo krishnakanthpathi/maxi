@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core.agent import agent
 
@@ -7,11 +8,34 @@ logger = logging.getLogger("maxi.ws")
 router = APIRouter()
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"Client connected to Maxi WebSocket ({len(self.active_connections)} active)")
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+        logger.info(f"Client disconnected from Maxi WebSocket ({len(self.active_connections)} active)")
+
+    async def broadcast(self, message: dict):
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.active_connections.discard(connection)
+
+
+ws_manager = ConnectionManager()
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """Bidirectional WebSocket for low-latency streaming between frontend/voice plugins and Maxi."""
-    await websocket.accept()
-    logger.info("Client connected to Maxi WebSocket")
+    await ws_manager.connect(websocket)
 
     try:
         while True:
@@ -39,4 +63,4 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"error": str(e)})
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected from Max WebSocket")
+        ws_manager.disconnect(websocket)

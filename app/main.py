@@ -49,9 +49,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from pathlib import Path
+from fastapi.responses import HTMLResponse, FileResponse
+
 # Register routes
 app.include_router(api_router, prefix="/api")
 app.include_router(ws_router)
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/hud", response_class=HTMLResponse)
+async def serve_hud():
+    """Serves the modern Siri-style desktop HUD frontend."""
+    html_path = Path(__file__).resolve().parent / "web" / "index.html"
+    if html_path.exists():
+        return FileResponse(html_path)
+    return HTMLResponse("<h1>Maxi Daemon Live</h1>")
 
 
 if __name__ == "__main__":

@@ -2,9 +2,9 @@
 Maxi Integrated Voice Push-to-Talk Service
 Runs as an embedded background listener inside the Maxi daemon.
 Trigger: Hold [Control + Space], speak, release.
-Visuals: Floating pill indicator in the bottom-right corner during recording.
 Audio STT: Transcribes audio via Voice endpoint (Groq Whisper-Turbo), then hands
 the transcript directly to the Main Agent.
+Web HUD: Broadcasts real-time voice events to connected clients over WebSockets.
 """
 
 import io
@@ -40,8 +40,8 @@ def play_sound(sound_name: str):
 
 
 def show_notification(title: str, message: str, subtitle: str = ""):
-    """Display native macOS notification banner."""
-    clean_msg = message.replace('"', '\\"').replace("\n", " ")[:120]
+    """Display native macOS notification banner with full text."""
+    clean_msg = message.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
     clean_title = title.replace('"', '\\"')
     clean_sub = subtitle.replace('"', '\\"') if subtitle else ""
     sub_clause = f'subtitle "{clean_sub}"' if clean_sub else ""
@@ -55,7 +55,6 @@ class VoiceHotkeyService:
     def __init__(self):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._listener: Optional[keyboard.Listener] = None
-        self._indicator_proc: Optional[subprocess.Popen] = None
         self._stream: Optional[sd.InputStream] = None
 
         # Key state
@@ -64,6 +63,15 @@ class VoiceHotkeyService:
         self.is_recording = False
         self.audio_buffer: List[np.ndarray] = []
         self.lock = threading.Lock()
+
+    def _broadcast(self, msg: dict):
+        """Broadcasts voice state event to active WebSocket connections."""
+        try:
+            from app.api.websocket import ws_manager
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(ws_manager.broadcast(msg), self._loop)
+        except Exception as e:
+            logger.debug(f"Could not broadcast voice event: {e}")
 
     def _is_ctrl(self, key) -> bool:
         if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
@@ -81,30 +89,6 @@ class VoiceHotkeyService:
             return True
         return False
 
-    def _show_indicator(self):
-        """Spawns the floating bottom-right listening indicator."""
-        if self._indicator_proc is None or self._indicator_proc.poll() is not None:
-            try:
-                cmd = [sys.executable, "-m", "app.ui.indicator"]
-                self._indicator_proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            except Exception as e:
-                logger.error(f"Failed to spawn visual indicator: {e}")
-
-    def _hide_indicator(self):
-        """Closes the floating listening indicator."""
-        if self._indicator_proc is not None:
-            try:
-                self._indicator_proc.terminate()
-                self._indicator_proc.wait(timeout=0.5)
-            except Exception:
-                pass
-            finally:
-                self._indicator_proc = None
-
     def _audio_callback(self, indata, frames, time_info, status):
         if self.is_recording:
             self.audio_buffer.append(indata.copy())
@@ -117,7 +101,7 @@ class VoiceHotkeyService:
             self.audio_buffer = []
 
             play_sound("Tink")
-            self._show_indicator()
+            self._broadcast({"event": "voice_start"})
             logger.info("🎙️ Voice push-to-talk recording started...")
 
             try:
@@ -131,14 +115,14 @@ class VoiceHotkeyService:
             except Exception as e:
                 logger.error(f"Failed to open microphone audio stream: {e}")
                 self.is_recording = False
-                self._hide_indicator()
+                self._broadcast({"event": "voice_stop"})
 
     def stop_recording(self):
         with self.lock:
             if not self.is_recording:
                 return
             self.is_recording = False
-            self._hide_indicator()
+            self._broadcast({"event": "voice_stop"})
 
             if self._stream:
                 try:
@@ -230,6 +214,15 @@ class VoiceHotkeyService:
         if tools_used:
             logger.info(f"🛠️  Tools executed: {', '.join(tools_used)}")
 
+        # Broadcast result to frontend HUD
+        self._broadcast({
+            "event": "voice_result",
+            "transcript": transcript,
+            "output": agent_output,
+            "tools": tools_used
+        })
+
+        # Native macOS notification banner (full text)
         show_notification(
             title="Maxi Voice 🎙️",
             message=agent_output or "Command executed.",
@@ -277,7 +270,6 @@ class VoiceHotkeyService:
             except Exception:
                 pass
             self._listener = None
-        self._hide_indicator()
         logger.info("Voice Push-to-Talk listener stopped.")
 
 
