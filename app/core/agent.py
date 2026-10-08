@@ -3,8 +3,10 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List
+import subprocess
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
+from langchain_core.tools import tool
 from app.config import settings
 from app.core.skills import skill_registry
 from app.core.mcp_client import mcp_manager
@@ -12,11 +14,28 @@ from app.core.mcp_client import mcp_manager
 logger = logging.getLogger("maxi.agent")
 
 
+@tool
+def lmem_recall(query: str, limit: int = 5) -> str:
+    """Searches persistent long-term memories in ~/.lightmem/memories.db using LightMem hybrid vector + FTS search with multi-hop graph expansion. Use this to retrieve facts about user workstations, project locations, credentials, past decisions, or preferences."""
+    try:
+        cmd = ["lmem", "recall", query, "--global", "--multi-hop", "-l", str(limit)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if proc.returncode == 0:
+            out = proc.stdout.strip()
+            return out if out else f"No memories found for query: '{query}'"
+        return f"Error executing lmem: {proc.stderr.strip()}"
+    except Exception as e:
+        return f"Failed to execute lmem recall: {str(e)}"
+
+
 class MaxiAgent:
     """Stateless agent loop using OpenAI-compatible endpoints with dynamic skills and MCP tools."""
 
     def __init__(self):
         self.settings = settings
+
+    def _get_all_tools(self) -> List[Any]:
+        return list(mcp_manager.get_tools()) + [lmem_recall]
 
     def _get_llm(self, streaming: bool = False) -> ChatOpenAI:
         return ChatOpenAI(
@@ -77,7 +96,7 @@ class MaxiAgent:
         """Execute prompt statelessly against OpenAI-compatible endpoint with full MCP tool execution."""
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
-        tools = mcp_manager.get_tools()
+        tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
         logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded)")
@@ -179,7 +198,7 @@ class MaxiAgent:
         """Stream token-by-token response over WebSockets, executing tool calls when requested."""
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
-        tools = mcp_manager.get_tools()
+        tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
         messages: List[BaseMessage] = [
