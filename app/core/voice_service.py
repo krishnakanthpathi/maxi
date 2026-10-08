@@ -70,7 +70,7 @@ class VoiceHotkeyService:
         self.press_time = 0.0
 
         self.audio_buffer: List[np.ndarray] = []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def _broadcast(self, msg: dict):
         """Broadcasts voice state event to active WebSocket connections."""
@@ -82,12 +82,16 @@ class VoiceHotkeyService:
             logger.debug(f"Could not broadcast voice event: {e}")
 
     def _is_mac_right_option(self, key) -> bool:
-        """Identifies Mac Right Option key via Key.alt_r, alt_gr, or virtual keycode."""
+        """Identifies Mac Right Option key via Key.alt_r, alt_gr, virtual keycode, or string representation."""
         if key in (keyboard.Key.alt_r, getattr(keyboard.Key, "alt_gr", None)):
             return True
         if hasattr(key, "name") and key.name in ("alt_r", "option_r", "alt_gr"):
             return True
         if hasattr(key, "vk") and key.vk in (61, 54):
+            return True
+        if str(key) in ("Key.alt_r", "Key.alt_gr"):
+            return True
+        if "<61>" in repr(key):
             return True
         return False
 
@@ -252,6 +256,7 @@ class VoiceHotkeyService:
     def _on_press(self, key):
         if self.is_mac:
             if self._is_mac_right_option(key):
+                logger.info("🔑 Right Option key detected.")
                 with self.lock:
                     if self.is_recording and self.is_locked:
                         # Pressed again while locked in -> stop and send!
