@@ -60,6 +60,16 @@ class Settings(BaseSettings):
         alias="ENABLE_VOICE_HOTKEY",
         description="Enable global Control+Space push-to-talk listener inside the daemon"
     )
+    voice_start_sound: str = Field(
+        default="Ping",
+        alias="VOICE_START_SOUND",
+        description="macOS sound played when recording starts (e.g. Ping, Bottle, Glass)"
+    )
+    voice_finish_sound: str = Field(
+        default="Glass",
+        alias="VOICE_FINISH_SOUND",
+        description="macOS sound played when voice command completes (e.g. Glass, Bottle, Ping)"
+    )
 
     def get_voice_api_key(self) -> str:
         """Resolves Voice/Groq API key from config or environment variables."""

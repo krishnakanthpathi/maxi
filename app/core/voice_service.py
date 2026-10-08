@@ -100,7 +100,7 @@ class VoiceHotkeyService:
             self.is_recording = True
             self.audio_buffer = []
 
-            play_sound("Tink")
+            play_sound(settings.voice_start_sound)
             self._broadcast({"event": "voice_start"})
             logger.info("🎙️ Voice push-to-talk recording started...")
 
@@ -183,7 +183,7 @@ class VoiceHotkeyService:
             return
 
         stt_ms = round((time.perf_counter() - t0) * 1000, 1)
-        play_sound("Pop")
+        play_sound(settings.voice_finish_sound)
         logger.info(f"🗣️ Voice Transcript ({stt_ms}ms): \"{transcript}\"")
 
         # Hand directly to Main Agent
