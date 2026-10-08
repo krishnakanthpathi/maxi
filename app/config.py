@@ -35,6 +35,43 @@ class Settings(BaseSettings):
         description="Target model identifier"
     )
 
+    # Voice Service Settings
+    voice_base_url: str = Field(
+        default="https://api.groq.com/openai/v1",
+        alias="VOICE_BASE_URL",
+        description="Base URL for voice transcription/speech provider"
+    )
+    voice_api_key: Optional[str] = Field(
+        default=None,
+        alias="VOICE_API_KEY",
+        description="API key for voice provider (fallback to GROQ_API_KEY / GROK_API_KEY)"
+    )
+    voice_model: str = Field(
+        default="whisper-large-v3-turbo",
+        alias="VOICE_MODEL",
+        description="Model identifier for speech transcription"
+    )
+    voice_system_prompt: str = Field(
+        default="You are Maxi Voice. Provide direct, single-sentence spoken answers without markdown, bullets, asterisks, or bold text.",
+        alias="VOICE_SYSTEM_PROMPT"
+    )
+    enable_voice_hotkey: bool = Field(
+        default=True,
+        alias="ENABLE_VOICE_HOTKEY",
+        description="Enable global Control+Space push-to-talk listener inside the daemon"
+    )
+
+    def get_voice_api_key(self) -> str:
+        """Resolves Voice/Groq API key from config or environment variables."""
+        if self.voice_api_key:
+            return self.voice_api_key
+        import os
+        for k in ("GROQ_API_KEY", "GROK_API_KEY", "OPENAI_API_KEY"):
+            val = os.environ.get(k)
+            if val:
+                return val
+        return ""
+
     # System Persona & Skills
     system_prompt: str = (
         "You are Maxi, an ultra-fast, capable cross-platform background agent. "

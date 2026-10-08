@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
@@ -6,6 +7,7 @@ from app.config import settings
 from app.api.routes import router as api_router
 from app.api.websocket import router as ws_router
 from app.core.mcp_client import mcp_manager
+from app.core.voice_service import voice_service
 
 logging.basicConfig(
     level=logging.INFO if not settings.debug else logging.DEBUG,
@@ -19,9 +21,16 @@ async def lifespan(app: FastAPI):
     # Startup: Connect to configured MCP servers
     logger.info("Initializing Maxi daemon and MCP tool connections...")
     await mcp_manager.connect_all()
+
+    # Start embedded voice push-to-talk listener (Control + Space) if enabled
+    loop = asyncio.get_running_loop()
+    voice_service.start(loop=loop)
+
     yield
+
     # Shutdown
     logger.info("Shutting down Maxi daemon...")
+    voice_service.stop()
 
 
 app = FastAPI(
