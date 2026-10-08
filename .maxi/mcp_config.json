@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "native-assistant": {
+      "command": "/Users/krishnakanth/Projects/native-assistant-mcp/.venv/bin/python",
+      "args": [
+        "/Users/krishnakanth/Projects/native-assistant-mcp/server.py"
+      ],
+      "env": {}
+    }
+  }
+}
