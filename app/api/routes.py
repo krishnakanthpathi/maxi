@@ -53,6 +53,13 @@ async def handle_voice_webhook(request: VoiceWebhookRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/context/clear")
+async def clear_context():
+    """Clears short-term sliding conversational history buffer."""
+    agent.clear_history()
+    return {"status": "cleared", "message": "Conversation history reset to empty."}
+
+
 @router.get("/skills", response_model=List[Skill])
 async def list_skills():
     return skill_registry.list_skills()

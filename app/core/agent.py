@@ -13,10 +13,31 @@ logger = logging.getLogger("maxi.agent")
 
 
 class MaxiAgent:
-    """Stateless agent loop using OpenAI-compatible endpoints with dynamic skills and MCP tools."""
+    """Agent loop using OpenAI-compatible endpoints with dynamic skills, MCP tools, and 5-turn sliding context."""
 
     def __init__(self):
         self.settings = settings
+        self._history: List[BaseMessage] = []
+        self._max_history_turns: int = 5  # Keeps past 5 conversation pairs (10 messages max)
+
+    def get_history(self) -> List[BaseMessage]:
+        """Returns the past conversation messages (up to 5 turns)."""
+        return list(self._history)
+
+    def append_turn(self, prompt: str, output: str):
+        """Saves a turn to short-term session history, keeping the last 5 turns."""
+        if not prompt or not output:
+            return
+        self._history.append(HumanMessage(content=prompt))
+        self._history.append(AIMessage(content=output))
+        max_messages = self._max_history_turns * 2
+        if len(self._history) > max_messages:
+            self._history = self._history[-max_messages:]
+
+    def clear_history(self):
+        """Clears short-term conversational session history."""
+        self._history.clear()
+        logger.info("Cleared short-term conversational history buffer.")
 
     def _get_llm(self, streaming: bool = False) -> ChatOpenAI:
         return ChatOpenAI(
@@ -74,16 +95,31 @@ class MaxiAgent:
             logger.error(f"Failed to record turn to history log: {e}")
 
     async def run(self, prompt: str, source: str = "text") -> Dict[str, Any]:
-        """Execute prompt statelessly against OpenAI-compatible endpoint with full MCP tool execution."""
+        """Execute prompt against OpenAI-compatible endpoint with MCP tool execution and 5-turn history."""
+        # Check for explicit session reset request
+        clean_prompt = prompt.strip().lower()
+        if clean_prompt in ("reset context", "reset conversation", "clear context", "clear history", "new topic", "new session"):
+            self.clear_history()
+            return {
+                "source": source,
+                "model": self.settings.openai_model,
+                "endpoint": self.settings.openai_base_url,
+                "input": prompt,
+                "output": "Conversation context cleared. Starting fresh.",
+                "tools_used": [],
+                "status": "success"
+            }
+
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
         tools = mcp_manager.get_tools()
         tool_map = {t.name: t for t in tools}
 
-        logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded)")
+        logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded, {len(self._history)//2} turns in memory)")
 
         messages: List[BaseMessage] = [
             SystemMessage(content=system_instruction),
+            *self.get_history(),
             HumanMessage(content=prompt)
         ]
 
@@ -139,6 +175,10 @@ class MaxiAgent:
             if not output_text.strip() and executed_tools:
                 output_text = f"Executed {', '.join(executed_tools)} successfully."
 
+            # Persist to short-term sliding history
+            if output_text.strip():
+                self.append_turn(prompt, output_text)
+
             self._record_turn(
                 source=source,
                 prompt=prompt,
@@ -184,6 +224,7 @@ class MaxiAgent:
 
         messages: List[BaseMessage] = [
             SystemMessage(content=system_instruction),
+            *self.get_history(),
             HumanMessage(content=prompt)
         ]
 
@@ -246,6 +287,10 @@ class MaxiAgent:
                 fallback = f"Executed {', '.join(executed_tools)} successfully."
                 full_output.append(fallback)
                 yield fallback
+                final_text = fallback
+
+            if final_text:
+                self.append_turn(prompt, final_text)
 
             self._record_turn(
                 source=source,

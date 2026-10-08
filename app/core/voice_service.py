@@ -33,34 +33,42 @@ CHANNELS = 1
 
 
 def play_sound(sound_name: str):
-    """Play macOS system audio chime asynchronously."""
-    sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
-    if os.path.exists(sound_path):
-        subprocess.Popen(["afplay", sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Play audio chime (macOS native afplay, graceful on Windows)."""
+    if sys.platform == "darwin":
+        sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
+        if os.path.exists(sound_path):
+            subprocess.Popen(["afplay", sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def show_notification(title: str, message: str, subtitle: str = ""):
-    """Display native macOS notification banner with full text."""
-    clean_msg = message.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
-    clean_title = title.replace('"', '\\"')
-    clean_sub = subtitle.replace('"', '\\"') if subtitle else ""
-    sub_clause = f'subtitle "{clean_sub}"' if clean_sub else ""
-    script = f'display notification "{clean_msg}" with title "{clean_title}" {sub_clause}'
-    subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    """Display native notification banner."""
+    if sys.platform == "darwin":
+        clean_msg = message.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
+        clean_title = title.replace('"', '\\"')
+        clean_sub = subtitle.replace('"', '\\"') if subtitle else ""
+        sub_clause = f'subtitle "{clean_sub}"' if clean_sub else ""
+        script = f'display notification "{clean_msg}" with title "{clean_title}" {sub_clause}'
+        subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        logger.info(f"[{title}] {message} ({subtitle})")
 
 
 class VoiceHotkeyService:
-    """Embedded global hotkey listener and audio capture pipeline."""
+    """Embedded global hotkey listener and audio capture pipeline with tap-to-lock support."""
 
     def __init__(self):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._listener: Optional[keyboard.Listener] = None
         self._stream: Optional[sd.InputStream] = None
 
-        # Key state
+        # Platform & hotkey state
+        self.is_mac = sys.platform == "darwin"
         self.ctrl_pressed = False
         self.space_pressed = False
         self.is_recording = False
+        self.is_locked = False
+        self.press_time = 0.0
+
         self.audio_buffer: List[np.ndarray] = []
         self.lock = threading.Lock()
 
@@ -72,6 +80,16 @@ class VoiceHotkeyService:
                 asyncio.run_coroutine_threadsafe(ws_manager.broadcast(msg), self._loop)
         except Exception as e:
             logger.debug(f"Could not broadcast voice event: {e}")
+
+    def _is_mac_right_option(self, key) -> bool:
+        """Identifies Mac Right Option key via Key.alt_r, alt_gr, or virtual keycode."""
+        if key in (keyboard.Key.alt_r, getattr(keyboard.Key, "alt_gr", None)):
+            return True
+        if hasattr(key, "name") and key.name in ("alt_r", "option_r", "alt_gr"):
+            return True
+        if hasattr(key, "vk") and key.vk in (61, 54):
+            return True
+        return False
 
     def _is_ctrl(self, key) -> bool:
         if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
@@ -102,7 +120,7 @@ class VoiceHotkeyService:
 
             play_sound(settings.voice_start_sound)
             self._broadcast({"event": "voice_start"})
-            logger.info("🎙️ Voice push-to-talk recording started...")
+            logger.info("🎙️ Voice recording started...")
 
             try:
                 self._stream = sd.InputStream(
@@ -115,6 +133,7 @@ class VoiceHotkeyService:
             except Exception as e:
                 logger.error(f"Failed to open microphone audio stream: {e}")
                 self.is_recording = False
+                self.is_locked = False
                 self._broadcast({"event": "voice_stop"})
 
     def stop_recording(self):
@@ -122,6 +141,7 @@ class VoiceHotkeyService:
             if not self.is_recording:
                 return
             self.is_recording = False
+            self.is_locked = False
             self._broadcast({"event": "voice_stop"})
 
             if self._stream:
@@ -230,37 +250,85 @@ class VoiceHotkeyService:
         )
 
     def _on_press(self, key):
-        if self._is_ctrl(key):
-            self.ctrl_pressed = True
-        elif self._is_space(key):
-            self.space_pressed = True
+        if self.is_mac:
+            if self._is_mac_right_option(key):
+                with self.lock:
+                    if self.is_recording and self.is_locked:
+                        # Pressed again while locked in -> stop and send!
+                        self.is_locked = False
+                        self.stop_recording()
+                        return
 
-        if self.ctrl_pressed and self.space_pressed and not self.is_recording:
-            self.start_recording()
+                    if not self.is_recording:
+                        self.press_time = time.time()
+                        self.is_locked = False
+                        self.start_recording()
+        else:
+            # Windows / Linux: Control + Space
+            if self._is_ctrl(key):
+                self.ctrl_pressed = True
+            elif self._is_space(key):
+                self.space_pressed = True
+
+            if self.ctrl_pressed and self.space_pressed:
+                with self.lock:
+                    if self.is_recording and self.is_locked:
+                        self.is_locked = False
+                        self.stop_recording()
+                        return
+
+                    if not self.is_recording:
+                        self.press_time = time.time()
+                        self.is_locked = False
+                        self.start_recording()
 
     def _on_release(self, key):
-        was_recording = self.is_recording
-        if self._is_ctrl(key):
-            self.ctrl_pressed = False
-        elif self._is_space(key):
-            self.space_pressed = False
+        if self.is_mac:
+            if self._is_mac_right_option(key):
+                with self.lock:
+                    if self.is_recording and not self.is_locked:
+                        elapsed = time.time() - self.press_time
+                        if elapsed < 0.4:
+                            # Quick tap (<400ms) -> LOCK IN recording!
+                            self.is_locked = True
+                            logger.info("🔒 Voice recording locked in (tap Right Option again to send).")
+                            self._broadcast({"event": "voice_locked", "locked": True})
+                        else:
+                            # Held down (>400ms) -> Push-to-Talk release!
+                            self.stop_recording()
+        else:
+            # Windows / Linux: Control + Space
+            was_recording = self.is_recording
+            if self._is_ctrl(key):
+                self.ctrl_pressed = False
+            elif self._is_space(key):
+                self.space_pressed = False
 
-        if was_recording and not (self.ctrl_pressed and self.space_pressed):
-            self.stop_recording()
+            if was_recording and not (self.ctrl_pressed and self.space_pressed):
+                with self.lock:
+                    if self.is_recording and not self.is_locked:
+                        elapsed = time.time() - self.press_time
+                        if elapsed < 0.4:
+                            self.is_locked = True
+                            logger.info("🔒 Voice recording locked in (press Ctrl+Space again to send).")
+                            self._broadcast({"event": "voice_locked", "locked": True})
+                        else:
+                            self.stop_recording()
 
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None):
-        """Starts the global Control+Space listener thread inside the daemon."""
+        """Starts the global Push-to-Talk / Lock-in voice listener thread."""
         if not settings.enable_voice_hotkey:
             logger.info("Voice push-to-talk hotkey is disabled (ENABLE_VOICE_HOTKEY=False).")
             return
 
         self._loop = loop
-        logger.info("Initializing global Control+Space Push-to-Talk voice listener...")
+        hotkey_name = "Right Option" if self.is_mac else "Control + Space"
+        logger.info(f"Initializing global {hotkey_name} voice listener (with tap-to-lock support)...")
 
         self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
         self._listener.start()
-        logger.info("✅ Voice Push-to-Talk active (Hold [Control + Space] to speak).")
+        logger.info(f"✅ Voice hotkey active: Tap {hotkey_name} to lock-in recording (or hold to speak).")
 
     def stop(self):
         """Stops the hotkey listener and audio capture."""

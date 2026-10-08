@@ -353,9 +353,9 @@
   <main>
     <!-- Siri-style Voice Orb -->
     <div class="orb-container" id="orb-card">
-      <div class="orb" id="voice-orb" title="Hold Control + Space to speak"></div>
+      <div class="orb" id="voice-orb" title="Tap or hold Right Option (Mac) / Control + Space (Win) to speak"></div>
       <div class="orb-label" id="orb-status">Ready for Voice or Text</div>
-      <div class="orb-hint">Hold <b>Control + Space</b> anywhere to speak your command</div>
+      <div class="orb-hint">Tap or hold <b>Right Option</b> (Mac) / <b>Control + Space</b> (Win) to speak</div>
     </div>
 
     <!-- Live Conversation Turns Feed -->
@@ -367,7 +367,7 @@
   <!-- Input Bar -->
   <div class="input-bar-container">
     <form class="input-form" id="input-form">
-      <input type="text" id="prompt-input" placeholder="Ask Maxi anything or hold Control + Space..." autocomplete="off">
+      <input type="text" id="prompt-input" placeholder="Ask Maxi anything or press Right Option / Control + Space..." autocomplete="off">
       <button type="submit" class="send-btn">Send</button>
     </form>
   </div>
@@ -419,6 +419,9 @@
       if (msg.event === 'voice_start') {
         voiceOrb.classList.add('listening');
         orbStatus.textContent = 'Listening to speech...';
+      } else if (msg.event === 'voice_locked') {
+        voiceOrb.classList.add('listening');
+        orbStatus.textContent = '🔒 Recording locked in (tap hotkey again to finish)...';
       } else if (msg.event === 'voice_stop') {
         voiceOrb.classList.remove('listening');
         orbStatus.textContent = 'Transcribing with Groq Whisper...';
