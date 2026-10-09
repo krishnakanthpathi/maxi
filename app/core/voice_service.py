@@ -86,9 +86,15 @@ def play_sound(sound_name: str):
                 break
     elif sys.platform == "win32":
         try:
-            import winsound
             if resolved.suffix.lower() == ".wav":
+                import winsound
                 winsound.PlaySound(str(resolved), winsound.SND_ASYNC | winsound.SND_FILENAME)
+            else:
+                import ctypes
+                alias = f"maxi_{abs(hash(str(resolved))) % 100000}"
+                winmm = ctypes.windll.winmm
+                winmm.mciSendStringW(f'open "{resolved}" type mpegvideo alias {alias}', None, 0, None)
+                winmm.mciSendStringW(f'play {alias} from 0', None, 0, None)
         except Exception:
             pass
 
@@ -158,14 +164,14 @@ class VoiceHotkeyService:
     def _is_ctrl(self, key) -> bool:
         if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             return True
-        if hasattr(key, "vk") and key.vk in (59, 62):
+        if hasattr(key, "vk") and key.vk in (59, 62, 17, 162, 163):
             return True
         return False
 
     def _is_space(self, key) -> bool:
         if key == keyboard.Key.space:
             return True
-        if hasattr(key, "vk") and key.vk == 49:
+        if hasattr(key, "vk") and key.vk in (49, 32):
             return True
         if hasattr(key, "char") and key.char == " ":
             return True

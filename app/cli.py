@@ -58,12 +58,18 @@ def cmd_start(args):
     log_file = PID_FILE.parent / "daemon.log"
 
     print("🚀 Starting Maxi background daemon...")
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | getattr(subprocess, "DETACHED_PROCESS", 0)
+    else:
+        kwargs["start_new_session"] = True
+
     with open(log_file, "a") as log_out:
         proc = subprocess.Popen(
             [sys.executable, "-m", "app.cli", "run"],
             stdout=log_out,
             stderr=log_out,
-            start_new_session=True
+            **kwargs
         )
 
     # Give process 1-2 seconds to bind port
@@ -89,9 +95,10 @@ def cmd_stop(args):
         os.kill(pid, signal.SIGTERM)
         time.sleep(1)
         if get_pid():
-            os.kill(pid, signal.SIGKILL)
+            kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+            os.kill(pid, kill_sig)
         print("✅ Daemon stopped.")
-    except ProcessLookupError:
+    except (ProcessLookupError, OSError):
         print("ℹ️  Process already terminated.")
     finally:
         PID_FILE.unlink(missing_ok=True)

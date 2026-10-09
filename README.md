@@ -14,14 +14,20 @@
 
 ## ⚡ Quick Start: One-Line Installer
 
-Install and configure Maxi on **macOS** or **Linux** with a single command:
+Install and configure Maxi with a single command:
 
+#### macOS & Linux (Terminal)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash
 ```
 
+#### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.ps1 | iex
+```
+
 The installer automatically:
-1. Detects your OS (macOS Apple Silicon/Intel or Linux distribution) and architecture.
+1. Detects your platform (macOS, Linux, or Windows) and architecture.
 2. Resolves audio dependencies (`libportaudio2`, `libasound2` on Linux).
 3. Creates an isolated environment at `~/.maxi/venv`.
 4. Symlinks the `maxi` CLI into `~/.local/bin/maxi`.
