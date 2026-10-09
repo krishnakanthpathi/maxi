@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0d12"/>
+      <stop offset="50%" stop-color="#090a0f"/>
+      <stop offset="100%" stop-color="#050508"/>
+    </linearGradient>
+
+    <!-- Crest Glow Gradient -->
+    <linearGradient id="crest-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#818cf8" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ec4899" stop-opacity="0.4"/>
+    </linearGradient>
+
+    <!-- Primary 'M' Bolt Gradient -->
+    <linearGradient id="bolt-grad-left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="70%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+
+    <linearGradient id="bolt-grad-center" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#67e8f9"/>
+      <stop offset="75%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+
+    <linearGradient id="bolt-grad-right" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="60%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+
+    <!-- Glass Specular Gradient -->
+    <linearGradient id="specular-glass" x1="0%" y1="0%" x2="100%" y2="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0"/>
+    </linearGradient>
+
+    <!-- Drop Shadows & Filters -->
+    <filter id="core-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="ambient-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.8"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle App Shield -->
+  <rect x="24" y="24" width="464" height="464" rx="108" ry="108" fill="url(#bg-grad)" filter="url(#ambient-shadow)"/>
+  
+  <!-- Outer Specular Glass Border -->
+  <rect x="24" y="24" width="464" height="464" rx="108" ry="108" fill="none" stroke="url(#specular-glass)" stroke-width="3"/>
+  <rect x="26" y="26" width="460" height="460" rx="106" ry="106" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5"/>
+
+  <!-- Ambient Backdrop Glow Behind 'M' -->
+  <circle cx="256" cy="256" r="140" fill="url(#crest-glow)" filter="url(#core-glow)" opacity="0.35"/>
+
+  <!-- Geometric 'M' Lightning Crest -->
+  <g filter="url(#core-glow)" transform="translate(0, 0)">
+    <!-- Left Wing of 'M' -->
+    <path d="M 120 376 L 120 180 L 176 136 L 206 188 L 168 220 L 168 376 Z" 
+          fill="url(#bolt-grad-left)"/>
+    <path d="M 120 180 L 176 136 L 194 156 L 142 198 Z" 
+          fill="#93c5fd" opacity="0.6"/>
+
+    <!-- Right Wing of 'M' -->
+    <path d="M 392 376 L 392 180 L 336 136 L 306 188 L 344 220 L 344 376 Z" 
+          fill="url(#bolt-grad-right)"/>
+    <path d="M 392 180 L 336 136 L 318 156 L 370 198 Z" 
+          fill="#f472b6" opacity="0.6"/>
+
+    <!-- Central Electric Lightning Strike -->
+    <polygon points="176,136 256,236 336,136 292,136 256,182 220,136" 
+             fill="url(#bolt-grad-center)"/>
+
+    <!-- Lightning Spearhead Pointing Downward -->
+    <polygon points="256,116 284,212 242,212 268,348 200,248 244,248 228,154" 
+             fill="url(#bolt-grad-center)" opacity="0.95"/>
+
+    <!-- Sharp Center Energy Spark Core -->
+    <polygon points="256,150 268,206 248,206 262,286 230,228 250,228 244,170" 
+             fill="#ffffff"/>
+  </g>
+
+  <!-- Specular Reflection Across Shield -->
+  <path d="M 24 132 C 24 72 72 24 132 24 L 380 24 C 440 24 488 72 488 132 C 410 180 300 210 180 220 C 90 228 40 180 24 132 Z" 
+        fill="url(#specular-glass)" opacity="0.4"/>
+</svg>

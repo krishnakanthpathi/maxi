@@ -57,11 +57,35 @@ app.include_router(api_router, prefix="/api")
 app.include_router(ws_router)
 
 
+@app.get("/favicon.ico")
+@app.get("/favicon.svg")
+async def serve_favicon():
+    candidates = [
+        Path(__file__).resolve().parent / "web" / "icons" / "favicon.svg",
+        Path(__file__).resolve().parent.parent / "frontends" / "web" / "icons" / "favicon.svg",
+    ]
+    for p in candidates:
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+    return HTMLResponse("")
+
+
+@app.get("/icons/maxi-icon.svg")
+async def serve_icon():
+    candidates = [
+        Path(__file__).resolve().parent / "web" / "icons" / "maxi-icon.svg",
+        Path(__file__).resolve().parent.parent / "frontends" / "web" / "icons" / "maxi-icon.svg",
+    ]
+    for p in candidates:
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+    return HTMLResponse("")
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/hud", response_class=HTMLResponse)
 async def serve_hud():
     """Serves the modern Siri-style desktop HUD frontend."""
-    # Check frontends/web first (monorepo layout), then app/web (installed wheel layout)
     candidates = [
         Path(__file__).resolve().parent.parent / "frontends" / "web" / "index.html",
         Path(__file__).resolve().parent / "web" / "index.html"

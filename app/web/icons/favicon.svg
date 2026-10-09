@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="fav-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090a0f"/>
+      <stop offset="100%" stop-color="#050508"/>
+    </linearGradient>
+    <linearGradient id="fav-m" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#fav-bg)"/>
+  <rect width="64" height="64" rx="16" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+  <!-- M Lightning Silhouette -->
+  <path d="M 14 48 L 14 22 L 23 16 L 27 24 L 21 28 L 21 48 Z" fill="#38bdf8"/>
+  <path d="M 50 48 L 50 22 L 41 16 L 37 24 L 43 28 L 43 48 Z" fill="#ec4899"/>
+  <!-- Lightning Core -->
+  <polygon points="23,16 32,27 41,16 36,16 32,21 28,16" fill="#ffffff"/>
+  <polygon points="32,14 36,26 31,26 34,44 26,30 31,30 29,19" fill="url(#fav-m)"/>
+  <polygon points="32,18 34,25 31,25 33,35 29,28 31,28 30,21" fill="#ffffff"/>
+</svg>
