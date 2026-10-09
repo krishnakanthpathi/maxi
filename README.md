@@ -36,11 +36,18 @@ The installer automatically:
 Control the background daemon from any terminal:
 
 ```bash
-maxi start     # Start background daemon on http://127.0.0.1:4848
-maxi status    # Inspect daemon PID, health, loaded MCP tools, and active sound theme
-maxi hud       # Open the modern web HUD in your default browser
-maxi stop      # Gracefully stop the background daemon
-maxi run       # Run in foreground (ideal for systemd or development)
+maxi start                       # Start background daemon on http://127.0.0.1:4848
+maxi status                      # Inspect daemon PID, health, loaded MCP tools, audio theme
+maxi hud                         # Open the modern web HUD in your default browser
+maxi config                      # View active LLM & Voice configuration
+maxi config preset ollama        # Switch to Ollama (Local Default on :11434 with llama3.2)
+maxi config preset jamba         # Switch to AI21 Jamba (Cloud Default with jamba-1.5-mini)
+maxi config set llm-url <url>    # Set custom OpenAI-compatible endpoint URL
+maxi config set llm-model <name> # Set model name
+maxi config set voice-key <key>  # Set Groq Whisper voice STT API key
+maxi config wizard               # Interactive terminal configuration wizard
+maxi stop                        # Gracefully stop the background daemon
+maxi run                         # Run in foreground (ideal for systemd or development)
 ```
 
 ---

@@ -203,3 +203,27 @@ async def set_active_sounds(request: SoundSetRequest):
 
     return {"status": "updated", "active": updated}
 
+
+@router.get("/config")
+async def get_configuration():
+    """Retrieve active LLM and Voice provider configuration and available presets."""
+    from app.core.config_manager import get_current_config, PRESETS, VOICE_PRESETS
+    return {
+        "config": get_current_config(),
+        "presets": PRESETS,
+        "voice_presets": VOICE_PRESETS
+    }
+
+
+@router.post("/config")
+async def update_configuration(updates: dict):
+    """Hot-reload configuration for LLM, Voice, and Audio settings."""
+    from app.core.config_manager import save_config, get_current_config
+    success, msg = save_config(updates, notify_daemon=False)
+    return {
+        "status": "updated" if success else "error",
+        "message": msg,
+        "config": get_current_config()
+    }
+
+

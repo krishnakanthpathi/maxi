@@ -266,6 +266,23 @@
       gap: 4px;
     }
 
+    .preset-pill {
+      background: rgba(39, 39, 42, 0.8);
+      border: 1px solid var(--tool-border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .preset-pill:hover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+    }
+
     /* Fixed Bottom Input Bar */
     .input-bar-container {
       position: fixed;
@@ -365,8 +382,78 @@
       <div class="status-badge">
         <span>Port 4848</span>
       </div>
+      <button id="open-config-btn" class="status-badge" style="cursor: pointer; font-weight: 600; color: var(--accent); background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.3);">
+        ⚙️ Config
+      </button>
     </div>
   </header>
+
+  <!-- Provider Configuration Modal -->
+  <div id="config-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: #18181b; border: 1px solid var(--card-border); border-radius: 16px; max-width: 580px; width: 100%; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(63, 63, 70, 0.4); padding-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">⚡ Provider Configuration</h3>
+        <button id="close-config-btn" style="background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 4px 8px;">✕</button>
+      </div>
+
+      <!-- LLM Section -->
+      <div style="margin-bottom: 20px;">
+        <label style="font-size: 0.85rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">🧠 LLM Provider</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+          <button type="button" class="preset-pill" onclick="selectLlmPreset('ollama')">Ollama (Local Default)</button>
+          <button type="button" class="preset-pill" onclick="selectLlmPreset('jamba')">AI21 Jamba (Cloud Default)</button>
+          <button type="button" class="preset-pill" onclick="selectLlmPreset('groq')">Groq (Cloud)</button>
+          <button type="button" class="preset-pill" onclick="selectLlmPreset('openrouter')">OpenRouter</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">Endpoint URL</label>
+            <input type="text" id="cfg-llm-url" placeholder="http://localhost:11434/v1" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">Model Identifier</label>
+            <input type="text" id="cfg-llm-model" placeholder="llama3.2 or jamba-1.5-mini" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">API Key (leave 'ollama' or empty for local)</label>
+            <input type="password" id="cfg-llm-key" placeholder="ollama or sk-..." style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+        </div>
+      </div>
+
+      <!-- Voice STT Section -->
+      <div style="margin-bottom: 24px; border-top: 1px solid rgba(63, 63, 70, 0.4); padding-top: 16px;">
+        <label style="font-size: 0.85rem; font-weight: 700; color: #ec4899; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">🎙️ Voice STT Provider</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+          <button type="button" class="preset-pill" onclick="selectVoicePreset('groq-whisper')">Groq Whisper (Cloud Default)</button>
+          <button type="button" class="preset-pill" onclick="selectVoicePreset('local-whisper')">Local Whisper</button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice Endpoint URL</label>
+            <input type="text" id="cfg-voice-url" placeholder="https://api.groq.com/openai/v1" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice Model</label>
+            <input type="text" id="cfg-voice-model" placeholder="whisper-large-v3-turbo" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+          <div>
+            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice API Key</label>
+            <input type="password" id="cfg-voice-key" placeholder="gsk_..." style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+          </div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(63, 63, 70, 0.4); padding-top: 16px;">
+        <button id="cancel-config-btn" style="background: transparent; border: 1px solid var(--card-border); color: var(--text-muted); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">Cancel</button>
+        <button id="save-config-btn" style="background: var(--accent); border: none; color: #09090b; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.85rem;">Save & Hot-Reload</button>
+      </div>
+    </div>
+  </div>
+
 
   <main>
     <!-- Siri-style Voice Orb -->
@@ -671,6 +758,106 @@
         }
       });
     }
+
+    // Config Modal Controls
+    const configModal = document.getElementById('config-modal');
+    const openConfigBtn = document.getElementById('open-config-btn');
+    const closeConfigBtn = document.getElementById('close-config-btn');
+    const cancelConfigBtn = document.getElementById('cancel-config-btn');
+    const saveConfigBtn = document.getElementById('save-config-btn');
+
+    const cfgLlmUrl = document.getElementById('cfg-llm-url');
+    const cfgLlmModel = document.getElementById('cfg-llm-model');
+    const cfgLlmKey = document.getElementById('cfg-llm-key');
+    const cfgVoiceUrl = document.getElementById('cfg-voice-url');
+    const cfgVoiceModel = document.getElementById('cfg-voice-model');
+    const cfgVoiceKey = document.getElementById('cfg-voice-key');
+
+    window.selectLlmPreset = function(preset) {
+      if (preset === 'ollama') {
+        cfgLlmUrl.value = 'http://localhost:11434/v1';
+        cfgLlmModel.value = 'llama3.2';
+        cfgLlmKey.value = 'ollama';
+      } else if (preset === 'jamba') {
+        cfgLlmUrl.value = 'https://api.ai21.com/studio/v1';
+        cfgLlmModel.value = 'jamba-1.5-mini';
+        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
+      } else if (preset === 'groq') {
+        cfgLlmUrl.value = 'https://api.groq.com/openai/v1';
+        cfgLlmModel.value = 'llama-3.3-70b-versatile';
+        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
+      } else if (preset === 'openrouter') {
+        cfgLlmUrl.value = 'https://openrouter.ai/api/v1';
+        cfgLlmModel.value = 'ai21/jamba-1.5-mini';
+        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
+      }
+    };
+
+    window.selectVoicePreset = function(preset) {
+      if (preset === 'groq-whisper') {
+        cfgVoiceUrl.value = 'https://api.groq.com/openai/v1';
+        cfgVoiceModel.value = 'whisper-large-v3-turbo';
+      } else if (preset === 'local-whisper') {
+        cfgVoiceUrl.value = 'http://localhost:8000/v1';
+        cfgVoiceModel.value = 'whisper-1';
+        cfgVoiceKey.value = 'local-key';
+      }
+    };
+
+    async function loadConfigModal() {
+      try {
+        const resp = await fetch('/api/config');
+        if (resp.ok) {
+          const data = await resp.json();
+          const c = data.config || {};
+          cfgLlmUrl.value = c.llm_url || '';
+          cfgLlmModel.value = c.llm_model || '';
+          cfgLlmKey.value = c.llm_key || '';
+          cfgVoiceUrl.value = c.voice_url || '';
+          cfgVoiceModel.value = c.voice_model || '';
+          cfgVoiceKey.value = c.voice_key || '';
+        }
+      } catch (err) {
+        console.warn("Could not load config:", err);
+      }
+    }
+
+    openConfigBtn.addEventListener('click', () => {
+      loadConfigModal();
+      configModal.style.display = 'flex';
+    });
+
+    closeConfigBtn.addEventListener('click', () => { configModal.style.display = 'none'; });
+    cancelConfigBtn.addEventListener('click', () => { configModal.style.display = 'none'; });
+
+    saveConfigBtn.addEventListener('click', async () => {
+      saveConfigBtn.disabled = true;
+      saveConfigBtn.innerText = 'Saving...';
+      const updates = {
+        OPENAI_BASE_URL: cfgLlmUrl.value.trim(),
+        OPENAI_MODEL: cfgLlmModel.value.trim(),
+        OPENAI_API_KEY: cfgLlmKey.value.trim(),
+        VOICE_BASE_URL: cfgVoiceUrl.value.trim(),
+        VOICE_MODEL: cfgVoiceModel.value.trim(),
+        VOICE_API_KEY: cfgVoiceKey.value.trim(),
+      };
+
+      try {
+        const resp = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates)
+        });
+        if (resp.ok) {
+          configModal.style.display = 'none';
+        }
+      } catch (e) {
+        alert("Failed to save config: " + e.message);
+      } finally {
+        saveConfigBtn.disabled = false;
+        saveConfigBtn.innerText = 'Save & Hot-Reload';
+      }
+    });
 
     connectWebSocket();
     loadHistory();
