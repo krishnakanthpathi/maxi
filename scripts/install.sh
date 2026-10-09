@@ -78,38 +78,47 @@ mkdir -p "${INSTALL_DIR}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+GIT_REPO_URL="https://github.com/krishnakanthpathi/maxi.git"
+SRC_DIR="${INSTALL_DIR}/src"
 
-# Sync local configs if available
-if [ -f "${REPO_ROOT}/.env" ] && [ ! -f "${INSTALL_DIR}/.env" ]; then
-    cp "${REPO_ROOT}/.env" "${INSTALL_DIR}/.env"
-    echo -e "🔑 Synced environment keys to ${CYAN}${INSTALL_DIR}/.env${RESET}"
+# If running via curl on a fresh system without local repo, clone from GitHub
+if [ ! -f "${REPO_ROOT}/pyproject.toml" ]; then
+    echo -e "🌐 Fetching latest Maxi source from GitHub..."
+    if [ -d "${SRC_DIR}/.git" ]; then
+        git -C "${SRC_DIR}" pull --quiet || true
+    else
+        git clone --quiet "${GIT_REPO_URL}" "${SRC_DIR}"
+    fi
+    SOURCE_PATH="${SRC_DIR}"
+else
+    SOURCE_PATH="${REPO_ROOT}"
 fi
-if [ -d "${REPO_ROOT}/.maxi" ]; then
-    cp -r "${REPO_ROOT}/.maxi/"* "${INSTALL_DIR}/" 2>/dev/null || true
+
+# Sync default configs from source
+if [ -f "${SOURCE_PATH}/.env" ] && [ ! -f "${INSTALL_DIR}/.env" ]; then
+    cp "${SOURCE_PATH}/.env" "${INSTALL_DIR}/.env"
+    echo -e "🔑 Synced environment keys to ${CYAN}${INSTALL_DIR}/.env${RESET}"
+elif [ -f "${SOURCE_PATH}/.env.example" ] && [ ! -f "${INSTALL_DIR}/.env" ]; then
+    cp "${SOURCE_PATH}/.env.example" "${INSTALL_DIR}/.env"
+    echo -e "🔑 Initialized default config at ${CYAN}${INSTALL_DIR}/.env${RESET}"
+fi
+
+if [ -d "${SOURCE_PATH}/.maxi" ]; then
+    cp -r "${SOURCE_PATH}/.maxi/"* "${INSTALL_DIR}/" 2>/dev/null || true
 fi
 
 echo -e "📦 Setting up isolated environment at ${CYAN}${VENV_DIR}${RESET}..."
 if command -v uv >/dev/null 2>&1; then
     echo -e "⚡ Using uv for high-speed package management..."
     uv venv --python "$PYTHON_BIN" "${VENV_DIR}"
-    if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
-        echo -e "🔧 Installing from local repository..."
-        uv pip install -e "${REPO_ROOT}${INSTALL_EXTRAS}" --python "${VENV_DIR}"
-    else
-        echo -e "🌐 Installing from PyPI package registry..."
-        uv pip install "maxi-ai${INSTALL_EXTRAS}" --python "${VENV_DIR}"
-    fi
+    echo -e "🔧 Installing Maxi package..."
+    uv pip install -e "${SOURCE_PATH}${INSTALL_EXTRAS}" --python "${VENV_DIR}"
 else
     "$PYTHON_BIN" -m venv "${VENV_DIR}"
     VENV_PIP="${VENV_DIR}/bin/pip"
     "${VENV_PIP}" install --upgrade --quiet pip setuptools wheel
-    if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
-        echo -e "🔧 Installing from local repository..."
-        "${VENV_PIP}" install --quiet -e "${REPO_ROOT}${INSTALL_EXTRAS}"
-    else
-        echo -e "🌐 Installing from PyPI package registry..."
-        "${VENV_PIP}" install --quiet "maxi-ai${INSTALL_EXTRAS}"
-    fi
+    echo -e "🔧 Installing Maxi package..."
+    "${VENV_PIP}" install --quiet -e "${SOURCE_PATH}${INSTALL_EXTRAS}"
 fi
 
 VENV_MAXI="${VENV_DIR}/bin/maxi"
