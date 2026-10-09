@@ -59,6 +59,7 @@ app.include_router(ws_router)
 
 @app.get("/favicon.ico")
 @app.get("/favicon.svg")
+@app.get("/icons/favicon.svg")
 async def serve_favicon():
     candidates = [
         Path(__file__).resolve().parent / "web" / "icons" / "favicon.svg",

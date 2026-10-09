@@ -3,1185 +3,1124 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Maxi HUD ⚡ Autonomous Workstation Agent</title>
+  <title>Maxi Workstation Console ⚡</title>
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
   <style>
     /* ==========================================================================
-       THEME SYSTEM: Obsidian Dark, Apple Liquid Glass, Cyberpunk Neon, Matrix
+       DESIGN SYSTEM: Command & Operate Workstation Console
+       Ref: claude-design (Anti-slop, Surface-first, Typography-driven)
        ========================================================================== */
     :root, [data-theme="obsidian"] {
-      --bg-base: #09090b;
-      --bg-ambient-1: rgba(56, 189, 248, 0.08);
-      --bg-ambient-2: rgba(129, 140, 248, 0.06);
-      --card-bg: rgba(20, 20, 24, 0.78);
-      --card-elevated: rgba(28, 28, 34, 0.9);
-      --card-border: rgba(63, 63, 70, 0.45);
-      --card-border-hover: rgba(56, 189, 248, 0.5);
-      --card-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.75);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.35);
-      --accent-secondary: #818cf8;
-      --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
-      --orb-gradient: radial-gradient(circle at 32% 32%, #38bdf8 0%, #6366f1 55%, #ec4899 100%);
-      --orb-shadow: 0 0 45px rgba(56, 189, 248, 0.4);
-      --orb-shadow-active: 0 0 80px rgba(236, 72, 153, 0.8), 0 0 120px rgba(56, 189, 248, 0.6);
-      --glass-blur: blur(18px);
-      --success: #34d399;
-      --tool-badge-bg: rgba(56, 189, 248, 0.12);
-      --tool-badge-border: rgba(56, 189, 248, 0.3);
-      --kbd-bg: rgba(39, 39, 42, 0.9);
+      --bg-root: #090a0f;
+      --bg-surface: #10121a;
+      --bg-surface-hover: #151824;
+      --bg-elevated: #181b28;
+      --border-subtle: rgba(255, 255, 255, 0.07);
+      --border-medium: rgba(255, 255, 255, 0.14);
+      --border-focus: #00d2ff;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-primary: #00d2ff;
+      --accent-muted: rgba(0, 210, 255, 0.12);
+      --accent-border: rgba(0, 210, 255, 0.35);
+      --voice-active: #f43f5e;
+      --voice-active-bg: rgba(244, 63, 94, 0.12);
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-full: 9999px;
+      --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 10px 24px -4px rgba(0, 0, 0, 0.6);
     }
 
     [data-theme="glass"] {
-      --bg-base: #070a13;
-      --bg-ambient-1: rgba(99, 102, 241, 0.18);
-      --bg-ambient-2: rgba(217, 70, 239, 0.14);
-      --card-bg: rgba(255, 255, 255, 0.06);
-      --card-elevated: rgba(255, 255, 255, 0.12);
-      --card-border: rgba(255, 255, 255, 0.18);
-      --card-border-hover: rgba(255, 255, 255, 0.45);
-      --card-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-      --text-main: #ffffff;
-      --text-muted: rgba(255, 255, 255, 0.72);
-      --text-dim: rgba(255, 255, 255, 0.45);
-      --accent: #60a5fa;
-      --accent-glow: rgba(96, 165, 250, 0.45);
-      --accent-secondary: #c084fc;
-      --accent-gradient: linear-gradient(135deg, #60a5fa, #c084fc);
-      --orb-gradient: radial-gradient(circle at 28% 28%, #93c5fd 0%, #a855f7 48%, #ec4899 90%);
-      --orb-shadow: 0 0 50px rgba(168, 85, 247, 0.45), inset 0 0 20px rgba(255, 255, 255, 0.6);
-      --orb-shadow-active: 0 0 90px rgba(236, 72, 153, 0.85), 0 0 130px rgba(96, 165, 250, 0.65);
-      --glass-blur: blur(28px) saturate(210%);
-      --success: #4ade80;
-      --tool-badge-bg: rgba(255, 255, 255, 0.1);
-      --tool-badge-border: rgba(255, 255, 255, 0.25);
-      --kbd-bg: rgba(255, 255, 255, 0.15);
+      --bg-root: #060913;
+      --bg-surface: rgba(15, 23, 42, 0.65);
+      --bg-surface-hover: rgba(30, 41, 59, 0.75);
+      --bg-elevated: rgba(30, 41, 59, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.12);
+      --border-medium: rgba(255, 255, 255, 0.22);
+      --border-focus: #38bdf8;
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255, 255, 255, 0.75);
+      --text-muted: rgba(255, 255, 255, 0.45);
+      --accent-primary: #38bdf8;
+      --accent-muted: rgba(56, 189, 248, 0.15);
+      --accent-border: rgba(56, 189, 248, 0.4);
+      --voice-active: #ec4899;
+      --voice-active-bg: rgba(236, 72, 153, 0.15);
+      --success: #34d399;
+      --success-bg: rgba(52, 211, 153, 0.12);
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
     }
 
-    [data-theme="cyberpunk"] {
-      --bg-base: #050509;
-      --bg-ambient-1: rgba(0, 240, 255, 0.12);
-      --bg-ambient-2: rgba(255, 0, 127, 0.1);
-      --card-bg: rgba(14, 15, 26, 0.85);
-      --card-elevated: rgba(24, 25, 42, 0.95);
-      --card-border: rgba(0, 240, 255, 0.3);
-      --card-border-hover: #ff007f;
-      --card-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
-      --text-main: #f0f6fc;
-      --text-muted: #67e8f9;
-      --text-dim: #0e7490;
-      --accent: #00f0ff;
-      --accent-glow: rgba(0, 240, 255, 0.55);
-      --accent-secondary: #ff007f;
-      --accent-gradient: linear-gradient(135deg, #00f0ff, #ff007f);
-      --orb-gradient: radial-gradient(circle at 35% 35%, #00f0ff 0%, #a21caf 60%, #ff007f 100%);
-      --orb-shadow: 0 0 50px rgba(0, 240, 255, 0.55);
-      --orb-shadow-active: 0 0 90px rgba(255, 0, 127, 0.9), 0 0 130px rgba(0, 240, 255, 0.8);
-      --glass-blur: blur(14px);
-      --success: #00ff66;
-      --tool-badge-bg: rgba(0, 240, 255, 0.15);
-      --tool-badge-border: rgba(0, 240, 255, 0.4);
-      --kbd-bg: rgba(20, 20, 35, 0.9);
+    [data-theme="mono"] {
+      --bg-root: #000000;
+      --bg-surface: #0a0a0a;
+      --bg-surface-hover: #141414;
+      --bg-elevated: #181818;
+      --border-subtle: #222222;
+      --border-medium: #333333;
+      --border-focus: #ffffff;
+      --text-primary: #ffffff;
+      --text-secondary: #a3a3a3;
+      --text-muted: #525252;
+      --accent-primary: #ffffff;
+      --accent-muted: #262626;
+      --accent-border: #404040;
+      --voice-active: #ffffff;
+      --voice-active-bg: #262626;
+      --success: #ffffff;
+      --success-bg: #1f1f1f;
+      --shadow-sm: none;
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.9);
     }
 
-    [data-theme="matrix"] {
-      --bg-base: #030804;
-      --bg-ambient-1: rgba(0, 255, 102, 0.1);
-      --bg-ambient-2: rgba(16, 185, 129, 0.08);
-      --card-bg: rgba(8, 20, 12, 0.82);
-      --card-elevated: rgba(13, 33, 19, 0.95);
-      --card-border: rgba(16, 185, 129, 0.35);
-      --card-border-hover: #00ff66;
-      --card-shadow: 0 0 25px rgba(0, 255, 102, 0.15);
-      --text-main: #e6ffed;
-      --text-muted: #34d399;
-      --text-dim: #065f46;
-      --accent: #00ff66;
-      --accent-glow: rgba(0, 255, 102, 0.5);
-      --accent-secondary: #10b981;
-      --accent-gradient: linear-gradient(135deg, #00ff66, #10b981);
-      --orb-gradient: radial-gradient(circle at 30% 30%, #00ff66 0%, #059669 60%, #064e3b 100%);
-      --orb-shadow: 0 0 45px rgba(0, 255, 102, 0.4);
-      --orb-shadow-active: 0 0 85px rgba(0, 255, 102, 0.85);
-      --glass-blur: blur(14px);
-      --success: #00ff66;
-      --tool-badge-bg: rgba(0, 255, 102, 0.12);
-      --tool-badge-border: rgba(0, 255, 102, 0.35);
-      --kbd-bg: rgba(10, 24, 14, 0.9);
-    }
-
-    /* Base Reset */
+    /* Reset & Layout */
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: var(--font-sans);
       -webkit-font-smoothing: antialiased;
     }
 
     body {
-      background-color: var(--bg-base);
-      color: var(--text-main);
-      min-height: 100vh;
+      background-color: var(--bg-root);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      overflow-x: hidden;
-      transition: background-color 0.4s ease, color 0.4s ease;
-      background-image: 
-        radial-gradient(circle at 50% 0%, var(--bg-ambient-1), transparent 50%),
-        radial-gradient(circle at 100% 100%, var(--bg-ambient-2), transparent 45%);
-      background-attachment: fixed;
+      transition: background-color 0.25s ease, color 0.25s ease;
     }
 
-    /* Header Nav */
+    /* Top Navigation Header */
     header {
-      padding: 14px 28px;
+      height: 52px;
+      padding: 0 20px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid var(--card-border);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      background: var(--card-bg);
-      transition: all 0.3s ease;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      z-index: 20;
+      flex-shrink: 0;
     }
 
-    .brand-group {
+    .brand-section {
       display: flex;
       align-items: center;
       gap: 12px;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
     }
 
-    .brand-icon-wrap {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      overflow: hidden;
+    .logo-mark {
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 14px var(--accent-glow);
     }
 
-    .brand-title {
-      font-weight: 800;
-      font-size: 1.15rem;
-      letter-spacing: -0.03em;
+    .brand-text {
+      font-size: 0.92rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .brand-title span.grad {
-      background: var(--accent-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .brand-tag {
-      font-size: 0.68rem;
-      font-weight: 800;
-      padding: 2px 7px;
-      border-radius: 6px;
-      background: var(--tool-badge-bg);
-      border: 1px solid var(--tool-badge-border);
-      color: var(--accent);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    .nav-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    /* Segmented Theme Switcher */
-    .theme-segmented {
-      display: flex;
-      align-items: center;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid var(--card-border);
-      border-radius: 9999px;
-      padding: 3px;
-      gap: 2px;
-    }
-
-    .theme-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 0.74rem;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .theme-btn:hover {
-      color: var(--text-main);
-    }
-
-    .theme-btn.active {
-      background: var(--card-elevated);
-      color: var(--accent);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-      border: 1px solid var(--card-border);
-    }
-
-    /* Control Pills */
-    .pill-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 9999px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-decoration: none;
-    }
-
-    .pill-btn:hover {
-      border-color: var(--card-border-hover);
-      color: var(--text-main);
-      transform: translateY(-1px);
-    }
-
-    .pill-btn.primary {
-      color: var(--accent);
-      background: var(--tool-badge-bg);
-      border-color: var(--tool-badge-border);
-    }
-
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--success);
-      box-shadow: 0 0 8px var(--success);
-    }
-
-    .dot.disconnected {
-      background: #ef4444;
-      box-shadow: 0 0 8px #ef4444;
-    }
-
-    /* Main Container */
-    main {
-      flex: 1;
-      max-width: 960px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 24px 20px 140px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* Hero Orb Centerpiece */
-    .hero-orb-panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 36px 20px 28px;
-      border-radius: 24px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      box-shadow: var(--card-shadow);
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-      transition: all 0.3s ease;
-    }
-
-    .hero-orb-panel::before {
-      content: "";
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 60%);
-      pointer-events: none;
-      opacity: 0.4;
-    }
-
-    /* Siri-style Dynamic Orb */
-    .orb-stage {
-      position: relative;
-      width: 96px;
-      height: 96px;
-      margin-bottom: 18px;
-      cursor: pointer;
-    }
-
-    .orb {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      background: var(--orb-gradient);
-      box-shadow: var(--orb-shadow);
-      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-      position: relative;
-      z-index: 2;
-    }
-
-    .orb-halo {
-      position: absolute;
-      inset: -12px;
-      border-radius: 50%;
-      background: var(--accent-gradient);
-      opacity: 0;
-      filter: blur(14px);
-      transition: opacity 0.3s ease;
-      z-index: 1;
-    }
-
-    .orb-stage.listening .orb {
-      transform: scale(1.18);
-      box-shadow: var(--orb-shadow-active);
-      animation: orb-breathe 1.2s infinite alternate ease-in-out;
-    }
-
-    .orb-stage.listening .orb-halo {
-      opacity: 0.75;
-      animation: halo-pulse 1.8s infinite ease-out;
-    }
-
-    @keyframes orb-breathe {
-      0% { transform: scale(1.12); filter: hue-rotate(0deg); }
-      100% { transform: scale(1.26); filter: hue-rotate(25deg); }
-    }
-
-    @keyframes halo-pulse {
-      0% { transform: scale(0.9); opacity: 0.8; }
-      100% { transform: scale(1.45); opacity: 0; }
-    }
-
-    /* Audio Waveform Canvas */
-    #visualizer-canvas {
-      width: 260px;
-      height: 38px;
-      margin-bottom: 12px;
-    }
-
-    .hotkey-instruction {
-      font-size: 0.88rem;
-      font-weight: 500;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 14px;
-    }
-
-    kbd {
-      background: var(--kbd-bg);
-      border: 1px solid var(--card-border);
-      color: var(--accent);
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 0.76rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-    }
-
-    /* Interactive Push-to-Talk button */
-    .push-to-talk-btn {
+    .status-pill {
       display: inline-flex;
       align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
+    }
+
+    .pulse-dot.offline {
+      background: #ef4444;
+      box-shadow: 0 0 6px #ef4444;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
       gap: 8px;
-      background: var(--card-elevated);
-      color: var(--text-main);
-      border: 1px solid var(--card-border);
-      padding: 9px 20px;
-      border-radius: 9999px;
-      font-size: 0.86rem;
-      font-weight: 700;
+    }
+
+    .btn-action {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      font-size: 0.76rem;
+      font-weight: 600;
       cursor: pointer;
-      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       transition: all 0.15s ease;
     }
 
-    .push-to-talk-btn:hover {
-      border-color: var(--card-border-hover);
-      color: var(--accent);
-      transform: translateY(-1px);
+    .btn-action:hover {
+      background: var(--bg-surface-hover);
+      color: var(--text-primary);
+      border-color: var(--border-medium);
     }
 
-    .push-to-talk-btn.active {
-      background: #ec4899;
-      color: #fff;
-      border-color: #ec4899;
-      box-shadow: 0 0 24px rgba(236, 72, 153, 0.7);
-      transform: scale(0.98);
-    }
-
-    /* Live Subtitle Transcript Banner */
-    .interim-banner {
-      width: 100%;
-      max-width: 700px;
-      margin-top: 14px;
-      padding: 10px 16px;
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px dashed var(--card-border);
-      border-radius: 12px;
-      font-size: 0.94rem;
+    .theme-select {
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 4px 8px;
+      font-size: 0.76rem;
       font-weight: 600;
-      color: var(--accent);
-      min-height: 44px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Main Console Workspace */
+    .workspace-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    /* Primary Feed (Left Column) */
+    .command-column {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      border-right: 1px solid var(--border-subtle);
+      position: relative;
+      background: var(--bg-root);
+    }
+
+    /* Active Voice Status Bar */
+    .voice-live-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: var(--voice-active-bg);
+      border-bottom: 1px solid var(--voice-active);
+      animation: slide-down 0.2s ease-out;
+      flex-shrink: 0;
+    }
+
+    .voice-live-bar.active {
+      display: flex;
+    }
+
+    @keyframes slide-down {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .voice-live-info {
       display: flex;
       align-items: center;
-      justify-content: center;
-      transition: opacity 0.2s ease;
+      gap: 12px;
+      flex: 1;
     }
 
-    .interim-banner.empty {
-      opacity: 0.45;
-      color: var(--text-dim);
-      font-style: italic;
-      font-weight: 400;
-    }
-
-    /* Quick Action Prompt Chips */
-    .quick-prompts {
+    .live-sound-indicator {
       display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 4px;
-      scrollbar-width: none;
+      gap: 3px;
+      align-items: center;
+      height: 16px;
     }
 
-    .quick-chip {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      padding: 6px 14px;
-      border-radius: 9999px;
-      font-size: 0.78rem;
+    .live-sound-bar {
+      width: 3px;
+      height: 100%;
+      background: var(--voice-active);
+      border-radius: 2px;
+      animation: sound-bounce 0.8s infinite ease-in-out alternate;
+    }
+
+    .live-sound-bar:nth-child(2) { animation-delay: 0.2s; height: 60%; }
+    .live-sound-bar:nth-child(3) { animation-delay: 0.4s; height: 80%; }
+    .live-sound-bar:nth-child(4) { animation-delay: 0.1s; height: 40%; }
+
+    @keyframes sound-bounce {
+      0% { height: 20%; }
+      100% { height: 100%; }
+    }
+
+    .live-transcript-text {
+      font-size: 0.88rem;
       font-weight: 600;
+      color: var(--text-primary);
       white-space: nowrap;
-      cursor: pointer;
-      transition: all 0.2s ease;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
     }
 
-    .quick-chip:hover {
-      border-color: var(--card-border-hover);
-      color: var(--accent);
-      background: var(--card-elevated);
-      transform: translateY(-1px);
-    }
-
-    /* Conversation Stream */
-    .stream-container {
+    /* Feed Container */
+    .activity-feed {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px 100px;
       display: flex;
       flex-direction: column;
       gap: 16px;
     }
 
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      box-shadow: var(--card-shadow);
-      border-radius: 18px;
-      padding: 20px;
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
+    /* Empty state */
+    .empty-feed {
       display: flex;
       flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      text-align: center;
       gap: 12px;
-      animation: card-appear 0.28s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    @keyframes card-appear {
-      from { opacity: 0; transform: translateY(12px) scale(0.98); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-
-    .card-header {
+    .empty-shortcuts {
       display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .shortcut-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-radius: var(--radius-full);
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .shortcut-pill:hover {
+      border-color: var(--accent-border);
+      color: var(--accent-primary);
+      background: var(--accent-muted);
+    }
+
+    /* Turn Cards in Feed */
+    .turn-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      animation: fade-in 0.2s ease-out;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .turn-header {
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: flex-start;
       justify-content: space-between;
+      gap: 12px;
+    }
+
+    .prompt-row {
+      display: flex;
       align-items: flex-start;
       gap: 10px;
+      flex: 1;
     }
 
-    .prompt-text {
-      font-size: 1.05rem;
+    .source-tag {
+      font-size: 0.7rem;
       font-weight: 700;
-      line-height: 1.4;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      font-family: var(--font-mono);
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
-    .card-meta {
+    .source-tag.voice {
+      background: var(--voice-active-bg);
+      color: var(--voice-active);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .source-tag.text {
+      background: var(--accent-muted);
+      color: var(--accent-primary);
+      border: 1px solid var(--accent-border);
+    }
+
+    .prompt-string {
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.4;
+    }
+
+    .turn-meta {
       display: flex;
       align-items: center;
       gap: 8px;
       font-size: 0.72rem;
-      color: var(--text-dim);
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .turn-tools {
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.1);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
     }
 
     .tool-badge {
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: var(--tool-badge-bg);
-      border: 1px solid var(--tool-badge-border);
-      color: var(--accent);
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-secondary);
     }
 
-    .response-body {
-      font-size: 0.95rem;
+    .turn-output {
+      padding: 16px;
+      font-size: 0.9rem;
       line-height: 1.6;
-      color: var(--text-main);
+      color: var(--text-primary);
       white-space: pre-wrap;
       word-break: break-word;
     }
 
-    /* Bottom Dock Bar */
-    .dock-bar {
-      position: fixed;
-      bottom: 24px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      padding: 0 20px;
-      z-index: 40;
-      pointer-events: none;
-    }
-
-    .input-dock {
-      max-width: 900px;
-      width: 100%;
-      background: var(--card-elevated);
-      border: 1px solid var(--card-border);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
-      border-radius: 18px;
-      padding: 8px 10px 8px 18px;
+    /* Fixed Floating Command Input Dock */
+    .command-dock {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      padding: 8px 10px 8px 16px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      backdrop-filter: var(--glass-blur);
-      -webkit-backdrop-filter: var(--glass-blur);
-      pointer-events: auto;
-      transition: all 0.2s ease;
+      gap: 10px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 10;
     }
 
-    .input-dock:focus-within {
-      border-color: var(--accent);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 24px var(--accent-glow);
+    .command-dock:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: var(--shadow-md), 0 0 0 2px rgba(0, 210, 255, 0.2);
     }
 
-    .input-dock input {
+    .dock-input {
       flex: 1;
       background: transparent;
       border: none;
       outline: none;
-      color: var(--text-main);
-      font-size: 0.98rem;
+      color: var(--text-primary);
+      font-size: 0.94rem;
     }
 
-    .input-dock input::placeholder {
-      color: var(--text-dim);
+    .dock-input::placeholder {
+      color: var(--text-muted);
     }
 
-    .send-btn {
-      background: var(--accent);
-      color: #09090b;
+    .dock-btn {
+      background: var(--accent-primary);
+      color: #000;
       border: none;
-      border-radius: 12px;
-      font-weight: 800;
-      font-size: 0.88rem;
-      padding: 9px 18px;
+      border-radius: var(--radius-md);
+      padding: 7px 14px;
+      font-size: 0.8rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: filter 0.15s ease;
     }
 
-    .send-btn:hover {
-      filter: brightness(1.15);
-      transform: translateY(-1px);
+    .dock-btn:hover {
+      filter: brightness(1.1);
     }
 
-    /* Modal / Drawer Overlays */
-    .modal-overlay {
+    /* Right Telemetry Column */
+    .telemetry-column {
+      background: var(--bg-surface);
+      height: 100%;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-card {
+      background: var(--bg-root);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+
+    .panel-title {
+      font-size: 0.76rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      margin-bottom: 8px;
+    }
+
+    .info-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .info-label {
+      color: var(--text-muted);
+    }
+
+    .info-value {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    /* Push-to-Talk Status Section */
+    .ptt-box {
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ptt-hotkey-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-medium);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+      font-family: var(--font-mono);
+    }
+
+    .ptt-mic-btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-medium);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .ptt-mic-btn:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .ptt-mic-btn.active {
+      background: var(--voice-active);
+      color: #fff;
+      border-color: var(--voice-active);
+      box-shadow: 0 0 16px rgba(244, 63, 94, 0.5);
+    }
+
+    /* Sound Selector in Sidebar */
+    .sound-control-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .sound-select-elem {
+      flex: 1;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 5px 8px;
+      font-size: 0.78rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Tools Drawer Modal */
+    .modal-backdrop {
       display: none;
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(8px);
       z-index: 100;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 24px;
     }
 
-    .modal-sheet {
-      background: var(--card-elevated);
-      border: 1px solid var(--card-border);
-      border-radius: 20px;
-      max-width: 600px;
-      width: 100%;
-      padding: 28px;
-      box-shadow: 0 30px 60px rgba(0,0,0,0.85);
-      max-height: 90vh;
-      overflow-y: auto;
-      position: relative;
-    }
-
-    .modal-header {
+    .modal-backdrop.open {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 12px;
     }
 
-    .close-modal-btn {
-      background: transparent;
+    .modal-dialog {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-lg);
+      max-width: 650px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+
+    .dialog-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .dialog-title {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .dialog-close {
+      background: none;
       border: none;
       color: var(--text-muted);
-      font-size: 1.4rem;
+      font-size: 1.2rem;
       cursor: pointer;
-      padding: 4px 8px;
     }
 
-    /* Tools Drawer List */
-    .tool-grid {
+    .dialog-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .tools-list-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 12px;
-      margin-top: 14px;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      max-height: 480px;
+      overflow-y: auto;
     }
 
-    .tool-item {
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 12px;
-      transition: all 0.2s ease;
+    .tool-list-item {
+      padding: 10px 14px;
+      background: var(--bg-root);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
     }
 
-    .tool-item:hover {
-      border-color: var(--card-border-hover);
-      background: rgba(0, 0, 0, 0.4);
-    }
-
-    .tool-name {
+    .tool-list-name {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
       font-weight: 700;
-      font-size: 0.88rem;
-      color: var(--accent);
+      color: var(--accent-primary);
       margin-bottom: 4px;
     }
 
-    .tool-desc {
+    .tool-list-desc {
       font-size: 0.76rem;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       line-height: 1.4;
     }
 
-    /* Preset Buttons */
-    .preset-pill {
-      background: var(--kbd-bg);
-      border: 1px solid var(--card-border);
-      color: var(--text-main);
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
+    /* Form Fields in Config Modal */
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
-    .preset-pill:hover {
-      border-color: var(--accent);
-      color: var(--accent);
+    .field-label {
+      font-size: 0.76rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .field-input {
+      background: var(--bg-root);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px;
+      color: var(--text-primary);
+      font-size: 0.84rem;
+      font-family: var(--font-mono);
+      outline: none;
+    }
+
+    .field-input:focus {
+      border-color: var(--border-focus);
     }
   </style>
 </head>
 <body>
 
-  <!-- Navigation Header -->
+  <!-- Top Navigation Bar -->
   <header>
-    <div class="brand-group" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
-      <div class="brand-icon-wrap">
-        <!-- Embedded Geometric 'M' Lightning Crest -->
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="36" height="36">
+    <div class="brand-section">
+      <div class="logo-mark">
+        <!-- Geometric M Crest Icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="26" height="26">
           <defs>
-            <linearGradient id="nav-m-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#38bdf8"/>
-              <stop offset="50%" stop-color="#818cf8"/>
-              <stop offset="100%" stop-color="#ec4899"/>
+            <linearGradient id="crest-m-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#00d2ff"/>
+              <stop offset="100%" stop-color="#3b82f6"/>
             </linearGradient>
           </defs>
-          <rect width="64" height="64" rx="14" fill="#090a0f"/>
-          <path d="M 14 48 L 14 22 L 23 16 L 27 24 L 21 28 L 21 48 Z" fill="#38bdf8"/>
-          <path d="M 50 48 L 50 22 L 41 16 L 37 24 L 43 28 L 43 48 Z" fill="#ec4899"/>
+          <rect width="64" height="64" rx="14" fill="#0b0e14"/>
+          <path d="M 14 48 L 14 22 L 23 16 L 27 24 L 21 28 L 21 48 Z" fill="#00d2ff"/>
+          <path d="M 50 48 L 50 22 L 41 16 L 37 24 L 43 28 L 43 48 Z" fill="#3b82f6"/>
           <polygon points="23,16 32,27 41,16 36,16 32,21 28,16" fill="#ffffff"/>
-          <polygon points="32,14 36,26 31,26 34,44 26,30 31,30 29,19" fill="url(#nav-m-grad)"/>
+          <polygon points="32,14 36,26 31,26 34,44 26,30 31,30 29,19" fill="url(#crest-m-grad)"/>
         </svg>
       </div>
-      <div class="brand-title">
-        <span class="grad">MAXI</span>
-        <span class="brand-tag">v0.2.0 Universal</span>
+      <div class="brand-text">
+        <span>MAXI</span>
+        <div class="status-pill">
+          <span class="pulse-dot" id="ws-dot"></span>
+          <span id="ws-status">Connecting</span>
+        </div>
       </div>
     </div>
 
-    <div class="nav-controls">
-      <!-- Theme Switcher Segmented Control -->
-      <div class="theme-segmented">
-        <button class="theme-btn active" data-theme-target="obsidian">🌑 Obsidian</button>
-        <button class="theme-btn" data-theme-target="glass">💎 Glass</button>
-        <button class="theme-btn" data-theme-target="cyberpunk">⚡ Neon</button>
-        <button class="theme-btn" data-theme-target="matrix">📟 Matrix</button>
-      </div>
+    <div class="header-actions">
+      <!-- Theme Switcher -->
+      <select class="theme-select" id="theme-selector" title="Select UI Theme">
+        <option value="obsidian">Obsidian Dark</option>
+        <option value="glass">Liquid Glass</option>
+        <option value="mono">Monochrome</option>
+      </select>
 
-      <!-- Sound Theme Quick Selector -->
-      <div class="pill-btn" style="gap: 6px;">
-        <span style="font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase;">Sound:</span>
-        <select id="sound-theme-select" style="background: transparent; color: inherit; border: none; font-size: 0.78rem; outline: none; cursor: pointer; font-weight: 600;">
-          <option value="minimal" style="background: #18181b;">Minimal Click</option>
-          <option value="glass" style="background: #18181b;">Liquid Glass</option>
-          <option value="soft" style="background: #18181b;">Soft Chime</option>
-          <option value="scifi" style="background: #18181b;">Sci-Fi Chirp</option>
-          <option value="zen" style="background: #18181b;">Zen Bowl</option>
-          <option value="synth" style="background: #18181b;">Synth Bloom</option>
-        </select>
-        <button id="audition-sound-btn" title="Audition Sound Theme" style="background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.85rem; padding: 0 2px;">🔊</button>
-      </div>
-
-      <!-- MCP Tools Drawer Button -->
-      <button id="open-tools-btn" class="pill-btn primary" title="View loaded MCP tools">
-        🛠️ <span id="tools-badge-count">70 Tools</span>
+      <!-- Tools Inspector Trigger -->
+      <button class="btn-action" id="open-tools-btn" title="Inspect loaded workstation MCP tools">
+        <span>Tools</span>
+        <span class="status-pill" style="padding: 1px 6px;" id="tools-count-pill">70</span>
       </button>
 
-      <!-- Connection Status -->
-      <div class="pill-btn" title="Daemon WebSocket status">
-        <span class="dot" id="ws-dot"></span>
-        <span id="ws-status" style="font-size: 0.75rem;">Connecting...</span>
-      </div>
+      <!-- Config Trigger -->
+      <button class="btn-action" id="open-config-btn" title="Configure endpoints and models">
+        Settings
+      </button>
 
-      <!-- Settings / Config Button -->
-      <button id="open-config-btn" class="pill-btn" title="Configure endpoints, keys, and models">
-        ⚙️ Config
+      <!-- Clear Feed -->
+      <button class="btn-action" id="clear-feed-btn" title="Clear current session feed">
+        Clear
       </button>
     </div>
   </header>
 
-  <!-- Main View -->
-  <main>
-    <!-- Siri-style Acoustic Orb Hero Panel -->
-    <section class="hero-orb-panel">
-      <div class="orb-stage" id="orb-trigger" title="Click or hold to speak">
-        <div class="orb-halo"></div>
-        <div class="orb"></div>
+  <!-- Workspace Grid -->
+  <div class="workspace-grid">
+    <!-- Primary Activity / Command Feed -->
+    <section class="command-column">
+      <!-- Live Voice Streaming Banner (shown on keypress) -->
+      <div class="voice-live-bar" id="voice-banner">
+        <div class="voice-live-info">
+          <div class="live-sound-indicator">
+            <div class="live-sound-bar"></div>
+            <div class="live-sound-bar"></div>
+            <div class="live-sound-bar"></div>
+            <div class="live-sound-bar"></div>
+          </div>
+          <div class="live-transcript-text" id="voice-transcript-text">Listening... Speak command...</div>
+        </div>
+        <div class="status-pill" style="color: var(--voice-active);">Recording</div>
       </div>
 
-      <!-- Live Waveform Visualizer -->
-      <canvas id="visualizer-canvas"></canvas>
-
-      <div class="hotkey-instruction">
-        Hold <kbd id="hotkey-display">Right Option (⌥)</kbd> anywhere to speak
+      <!-- Feed Container -->
+      <div class="activity-feed" id="activity-feed">
+        <!-- Rendered turns dynamically added here -->
+        <div class="empty-feed" id="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          <div style="font-weight: 600; font-size: 0.94rem;">Workstation Standing By</div>
+          <div style="font-size: 0.8rem; max-width: 320px;">Hold Right Option (⌥) anywhere to speak, or type a command below.</div>
+          <div class="empty-shortcuts">
+            <button class="shortcut-pill" onclick="sendPrompt('Open Chrome')">Open Chrome</button>
+            <button class="shortcut-pill" onclick="sendPrompt('Get system stats')">System Stats</button>
+            <button class="shortcut-pill" onclick="sendPrompt('Set volume to 50%')">Volume 50%</button>
+            <button class="shortcut-pill" onclick="sendPrompt('Get active window')">Active Window</button>
+          </div>
+        </div>
       </div>
 
-      <button id="web-ptt-btn" class="push-to-talk-btn">
-        🎙️ Hold to Speak (Browser)
-      </button>
-
-      <!-- Live Subtitle Stream -->
-      <div id="interim-transcript" class="interim-banner empty">
-        Listening status idle. Hold hotkey and speak to dispatch commands...
-      </div>
+      <!-- Persistent Floating Dock Input -->
+      <form class="command-dock" id="prompt-form">
+        <input type="text" class="dock-input" id="prompt-input" placeholder="Enter workstation command or ask Maxi... (/ to focus)" autocomplete="off">
+        <button type="submit" class="dock-btn">Execute</button>
+      </form>
     </section>
 
-    <!-- Quick Action Prompts -->
-    <div class="quick-prompts">
-      <button class="quick-chip" onclick="quickSend('Open Google Chrome')">🖥️ Open Chrome</button>
-      <button class="quick-chip" onclick="quickSend('Get system stats and CPU usage')">📊 System Stats</button>
-      <button class="quick-chip" onclick="quickSend('Set system volume to 50%')">🔊 Set Volume 50%</button>
-      <button class="quick-chip" onclick="quickSend('What is the current active window?')">🪟 Active Window</button>
-      <button class="quick-chip" onclick="quickSend('Play Stefan song')">🎵 Play Stefan Song</button>
-      <button class="quick-chip" onclick="quickSend('List running processes')">⚙️ List Processes</button>
-    </div>
+    <!-- Right Telemetry & Controls Column -->
+    <aside class="telemetry-column">
+      <!-- Voice Push-to-Talk Status Card -->
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>Voice Push-to-Talk</span>
+          <span style="color: var(--success); font-size: 0.7rem;">Active</span>
+        </div>
+        <div class="ptt-box">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.78rem; color: var(--text-muted);">Trigger Hotkey</span>
+            <span class="ptt-hotkey-badge" id="hotkey-label">Right Option (⌥)</span>
+          </div>
+          <button type="button" class="ptt-mic-btn" id="manual-ptt-btn">
+            <span>🎙️</span>
+            <span id="manual-ptt-text">Hold to Speak</span>
+          </button>
+        </div>
 
-    <!-- Conversational Stream -->
-    <section class="stream-container" id="stream-container">
-      <!-- Turn cards dynamically populated -->
-    </section>
-  </main>
+        <div style="margin-top: 12px;">
+          <div style="font-size: 0.74rem; font-family: var(--font-mono); color: var(--text-muted);">AUDIO THEME FEEDBACK</div>
+          <div class="sound-control-row">
+            <select class="sound-select-elem" id="sound-theme-picker">
+              <option value="minimal">Minimal (Linear)</option>
+              <option value="glass">Liquid Glass</option>
+              <option value="soft">Soft Chime</option>
+              <option value="scifi">Sci-Fi (Jarvis)</option>
+              <option value="zen">Zen Bowl</option>
+              <option value="synth">Synth Bloom</option>
+            </select>
+            <button type="button" class="btn-action" id="sound-test-btn" title="Audition completion sound">🔊</button>
+          </div>
+        </div>
+      </div>
 
-  <!-- Persistent Floating Dock Input -->
-  <div class="dock-bar">
-    <form class="input-dock" id="chat-form">
-      <input type="text" id="chat-input" placeholder="Ask Maxi or type a computer command... (e.g. 'Open VS Code', 'Check disk space')" autocomplete="off">
-      <button type="submit" class="send-btn">Send ↵</button>
-    </form>
+      <!-- Daemon & Model Telemetry Card -->
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>LLM Engine</span>
+          <span id="telemetry-model-short" style="color: var(--accent-primary);">Ollama</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Active Model</span>
+          <span class="info-value" id="telemetry-model">gemma4:31b-cloud</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Endpoint</span>
+          <span class="info-value" id="telemetry-endpoint">localhost:11434</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">STT Model</span>
+          <span class="info-value" id="telemetry-stt">whisper-large-v3</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Latency Mode</span>
+          <span class="info-value">Sub-Second</span>
+        </div>
+      </div>
+
+      <!-- MCP Workstation Tools Summary Card -->
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>Connected Capabilities</span>
+          <span id="telemetry-tools-count" style="color: var(--accent-primary);">70 MCP</span>
+        </div>
+        <div style="font-size: 0.76rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px;">
+          Native OS automation tools loaded for application control, window management, system telemetry, and audio control.
+        </div>
+        <button type="button" class="btn-action" style="width: 100%; justify-content: center;" onclick="document.getElementById('open-tools-btn').click()">
+          Browse 70 Tools →
+        </button>
+      </div>
+    </aside>
   </div>
 
-  <!-- MCP Tools Drawer Modal -->
-  <div class="modal-overlay" id="tools-modal">
-    <div class="modal-sheet" style="max-width: 780px;">
-      <div class="modal-header">
-        <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-          🛠️ Workstation MCP Tools (<span id="modal-tools-count">70</span> Available)
-        </h3>
-        <button class="close-modal-btn" id="close-tools-btn">✕</button>
+  <!-- MCP Tools Inspector Modal -->
+  <div class="modal-backdrop" id="tools-modal-backdrop">
+    <div class="modal-dialog">
+      <div class="dialog-header">
+        <div class="dialog-title">Workstation Capabilities (<span id="tools-dialog-count">70</span> Loaded)</div>
+        <button class="dialog-close" onclick="closeToolsModal()">✕</button>
       </div>
-      <input type="text" id="tool-search-input" placeholder="Search workstation tools (e.g. chrome, volume, mouse, process)..." style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 12px; outline: none;">
-      <div class="tool-grid" id="tool-grid-container">
-        <!-- Tool items populated via API -->
+      <div class="dialog-body">
+        <input type="text" class="field-input" id="tools-search-box" placeholder="Filter capabilities (e.g. volume, chrome, terminal)...">
+        <div class="tools-list-grid" id="tools-container">
+          <!-- Tools populated dynamically -->
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Config & Endpoints Modal -->
-  <div class="modal-overlay" id="config-modal">
-    <div class="modal-sheet">
-      <div class="modal-header">
-        <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-          ⚙️ Maxi Configuration & Hotkeys
-        </h3>
-        <button class="close-modal-btn" id="close-config-btn">✕</button>
+  <!-- Configuration Modal -->
+  <div class="modal-backdrop" id="config-modal-backdrop">
+    <div class="modal-dialog">
+      <div class="dialog-header">
+        <div class="dialog-title">Model & Endpoint Settings</div>
+        <button class="dialog-close" onclick="closeConfigModal()">✕</button>
       </div>
-
-      <!-- LLM Section -->
-      <div style="margin-bottom: 20px;">
-        <label style="font-size: 0.85rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">🧠 LLM Provider</label>
-        <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-          <button type="button" class="preset-pill" onclick="selectLlmPreset('ollama')">Ollama (Local Default)</button>
-          <button type="button" class="preset-pill" onclick="selectLlmPreset('groq')">Groq (Cloud)</button>
-          <button type="button" class="preset-pill" onclick="selectLlmPreset('openrouter')">OpenRouter</button>
+      <div class="dialog-body">
+        <div class="empty-shortcuts" style="justify-content: flex-start; margin-bottom: 8px;">
+          <button type="button" class="shortcut-pill" onclick="applyPreset('ollama')">Preset: Ollama</button>
+          <button type="button" class="shortcut-pill" onclick="applyPreset('groq')">Preset: Groq</button>
+          <button type="button" class="shortcut-pill" onclick="applyPreset('openrouter')">Preset: OpenRouter</button>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">Endpoint URL</label>
-            <input type="text" id="cfg-llm-url" placeholder="http://localhost:11434/v1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">Model Identifier</label>
-            <input type="text" id="cfg-llm-model" placeholder="gemma4:31b-cloud" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">API Key (use 'ollama' or sk-...)</label>
-            <input type="password" id="cfg-llm-key" placeholder="ollama" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
+        <div class="field-group">
+          <label class="field-label">OPENAI_BASE_URL</label>
+          <input type="text" class="field-input" id="cfg-llm-url" placeholder="http://localhost:11434/v1">
         </div>
-      </div>
-
-      <!-- Voice STT Section -->
-      <div style="margin-bottom: 24px; border-top: 1px solid var(--card-border); padding-top: 16px;">
-        <label style="font-size: 0.85rem; font-weight: 700; color: #ec4899; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">🎙️ Voice STT Provider</label>
-        <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-          <button type="button" class="preset-pill" onclick="selectVoicePreset('groq-whisper')">Groq Whisper (Cloud Default)</button>
-          <button type="button" class="preset-pill" onclick="selectVoicePreset('local-whisper')">Local Whisper</button>
+        <div class="field-group">
+          <label class="field-label">OPENAI_MODEL</label>
+          <input type="text" class="field-input" id="cfg-llm-model" placeholder="gemma4:31b-cloud">
+        </div>
+        <div class="field-group">
+          <label class="field-label">OPENAI_API_KEY</label>
+          <input type="password" class="field-input" id="cfg-llm-key" placeholder="ollama">
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice Endpoint URL</label>
-            <input type="text" id="cfg-voice-url" placeholder="https://api.groq.com/openai/v1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice Model</label>
-            <input type="text" id="cfg-voice-model" placeholder="whisper-large-v3-turbo" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
-          <div>
-            <label style="font-size: 0.78rem; color: var(--text-muted);">Voice API Key</label>
-            <input type="password" id="cfg-voice-key" placeholder="gsk_..." style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
-          </div>
+        <div style="border-top: 1px solid var(--border-subtle); padding-top: 12px; margin-top: 6px;" class="field-group">
+          <label class="field-label">VOICE_BASE_URL (Groq / OpenAI Whisper)</label>
+          <input type="text" class="field-input" id="cfg-voice-url" placeholder="https://api.groq.com/openai/v1">
         </div>
-      </div>
+        <div class="field-group">
+          <label class="field-label">VOICE_API_KEY</label>
+          <input type="password" class="field-input" id="cfg-voice-key" placeholder="gsk_...">
+        </div>
 
-      <!-- Action buttons -->
-      <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--card-border); padding-top: 16px;">
-        <button id="cancel-config-btn" class="preset-pill">Cancel</button>
-        <button id="save-config-btn" class="send-btn">Save & Hot-Reload</button>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+          <button type="button" class="btn-action" onclick="closeConfigModal()">Cancel</button>
+          <button type="button" class="dock-btn" id="save-cfg-btn">Save & Hot-Reload</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
     // =========================================================================
-    // THEME CONTROLLER & PERSISTENCE
-    // =========================================================================
-    const themeButtons = document.querySelectorAll('.theme-btn');
-    function setTheme(themeName) {
-      document.documentElement.setAttribute('data-theme', themeName);
-      localStorage.setItem('maxi_theme', themeName);
-      themeButtons.forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-theme-target') === themeName);
-      });
-      drawWaveform(false);
-    }
-
-    themeButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        setTheme(btn.getAttribute('data-theme-target'));
-      });
-    });
-
-    // Restore saved theme or default to obsidian
-    const savedTheme = localStorage.getItem('maxi_theme') || 'obsidian';
-    setTheme(savedTheme);
-
-    // =========================================================================
-    // WEBSOCKET & STATE MANAGEMENT
+    // STATE & PROTOCOL ENGINE
     // =========================================================================
     const wsDot = document.getElementById('ws-dot');
     const wsStatus = document.getElementById('ws-status');
-    const orbStage = document.getElementById('orb-trigger');
-    const interimBox = document.getElementById('interim-transcript');
-    const streamContainer = document.getElementById('stream-container');
-    const chatForm = document.getElementById('chat-form');
-    const chatInput = document.getElementById('chat-input');
-    const hotkeyDisplay = document.getElementById('hotkey-display');
-    const webPttBtn = document.getElementById('web-ptt-btn');
+    const voiceBanner = document.getElementById('voice-banner');
+    const voiceTranscriptText = document.getElementById('voice-transcript-text');
+    const activityFeed = document.getElementById('activity-feed');
+    const emptyState = document.getElementById('empty-state');
+    const promptForm = document.getElementById('prompt-form');
+    const promptInput = document.getElementById('prompt-input');
+    const manualPttBtn = document.getElementById('manual-ptt-btn');
+    const manualPttText = document.getElementById('manual-ptt-text');
+    const hotkeyLabel = document.getElementById('hotkey-label');
 
     let ws = null;
-    let isListening = false;
-    let currentCardBody = null;
-    let toolsCache = [];
+    let activeCardOutputElem = null;
+    let mcpToolsCache = [];
 
-    // Detect Platform Hotkey Text
+    // Detect Platform Hotkey Label
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    hotkeyDisplay.innerText = isMac ? "Right Option (⌥)" : "Control + Space";
+    hotkeyLabel.innerText = isMac ? "Right Option (⌥)" : "Control + Space";
 
-    function connectWebSocket() {
+    // Theme Management
+    const themeSelector = document.getElementById('theme-selector');
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      themeSelector.value = theme;
+      localStorage.setItem('maxi_theme', theme);
+    }
+    themeSelector.addEventListener('change', () => applyTheme(themeSelector.value));
+    applyTheme(localStorage.getItem('maxi_theme') || 'obsidian');
+
+    // =========================================================================
+    // WEBSOCKET PROTOCOL HANDLER
+    // =========================================================================
+    function initWebSocket() {
       const loc = window.location;
-      const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProto}//${loc.hostname || '127.0.0.1'}:4848/ws`;
+      const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${proto}//${loc.hostname || '127.0.0.1'}:4848/ws`;
 
-      ws = new WebSocket(wsUrl);
+      ws = new WebSocket(url);
 
       ws.onopen = () => {
-        wsDot.classList.remove('disconnected');
+        wsDot.classList.remove('offline');
         wsStatus.innerText = 'Connected';
       };
 
       ws.onclose = () => {
-        wsDot.classList.add('disconnected');
+        wsDot.classList.add('offline');
         wsStatus.innerText = 'Disconnected';
-        setTimeout(connectWebSocket, 2000);
+        setTimeout(initWebSocket, 2000);
       };
 
       ws.onerror = () => {
-        wsDot.classList.add('disconnected');
+        wsDot.classList.add('offline');
         wsStatus.innerText = 'Error';
       };
 
       ws.onmessage = (evt) => {
         try {
-          const data = JSON.parse(evt.data);
-          handleServerEvent(data);
+          const msg = JSON.parse(evt.data);
+          handleSocketEvent(msg);
         } catch (e) {
-          console.error("Malformed event:", e);
+          console.error("Socket parse error:", e);
         }
       };
     }
 
-    function handleServerEvent(data) {
-      if (data.event === 'voice_start') {
-        isListening = true;
-        orbStage.classList.add('listening');
-        interimBox.classList.remove('empty');
-        interimBox.innerText = 'Listening to speech...';
-        drawWaveform(true);
-      } else if (data.event === 'voice_interim_transcript') {
-        interimBox.classList.remove('empty');
-        interimBox.innerText = `"${data.transcript}"`;
-      } else if (data.event === 'voice_stop') {
-        isListening = false;
-        orbStage.classList.remove('listening');
-        interimBox.innerText = 'Executing workstation command...';
-        drawWaveform(false);
-      } else if (data.event === 'voice_result') {
-        isListening = false;
-        orbStage.classList.remove('listening');
-        interimBox.classList.add('empty');
-        interimBox.innerText = 'Hold hotkey to speak...';
-        drawWaveform(false);
-
-        addTurnCard({
+    function handleSocketEvent(msg) {
+      // 1. Voice Hardware Hotkey Events
+      if (msg.event === 'voice_start') {
+        voiceBanner.classList.add('active');
+        voiceTranscriptText.innerText = 'Listening to microphone... Speak command...';
+      } else if (msg.event === 'voice_interim_transcript') {
+        voiceBanner.classList.add('active');
+        voiceTranscriptText.innerText = `"${msg.transcript}"`;
+      } else if (msg.event === 'voice_stop') {
+        voiceTranscriptText.innerText = 'Transcribing and executing command...';
+      } else if (msg.event === 'voice_result') {
+        voiceBanner.classList.remove('active');
+        appendTurnCard({
           source: 'voice',
-          prompt: data.transcript,
-          output: data.output,
-          tools: data.tools || []
+          prompt: msg.transcript,
+          output: msg.output,
+          tools: msg.tools || [],
+          timestamp: new Date().toISOString()
         });
-      } else if (data.event === 'chunk') {
-        if (currentCardBody) {
-          currentCardBody.textContent += data.text;
+      }
+
+      // 2. Text Stream Chunk Events (fixes data.data protocol)
+      else if (msg.event === 'start') {
+        // Start of response
+      } else if (msg.event === 'chunk') {
+        const textChunk = msg.data || msg.text || '';
+        if (activeCardOutputElem && textChunk) {
+          activeCardOutputElem.textContent += textChunk;
+          scrollFeedToBottom();
         }
+      } else if (msg.event === 'done') {
+        activeCardOutputElem = null;
       }
     }
 
     // =========================================================================
-    // AUDIO VISUALIZER CANVAS
+    // FEED RENDERING & CARD ARCHITECTURE
     // =========================================================================
-    const canvas = document.getElementById('visualizer-canvas');
-    const ctx = canvas.getContext('2d');
-    let animId = null;
-    let wavePhase = 0;
+    function appendTurnCard(data) {
+      if (emptyState) emptyState.style.display = 'none';
 
-    function resizeCanvas() {
-      canvas.width = canvas.clientWidth * window.devicePixelRatio;
-      canvas.height = canvas.clientHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    function drawWaveform(active) {
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      ctx.clearRect(0, 0, w, h);
-
-      const theme = document.documentElement.getAttribute('data-theme') || 'obsidian';
-      let strokeColor = '#38bdf8';
-      if (theme === 'glass') strokeColor = '#60a5fa';
-      if (theme === 'cyberpunk') strokeColor = '#00f0ff';
-      if (theme === 'matrix') strokeColor = '#00ff66';
-
-      if (!active) {
-        // Idle gentle breathing sine wave
-        ctx.beginPath();
-        ctx.strokeStyle = strokeColor;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = 2;
-        wavePhase += 0.04;
-        for (let x = 0; x < w; x++) {
-          const y = h / 2 + Math.sin(x * 0.04 + wavePhase) * 4;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
-        animId = requestAnimationFrame(() => drawWaveform(isListening));
-      } else {
-        // Active acoustic bars reacting to speech
-        const bars = 36;
-        const barWidth = 4;
-        const gap = (w - (bars * barWidth)) / (bars - 1);
-        wavePhase += 0.15;
-
-        for (let i = 0; i < bars; i++) {
-          const amp = Math.abs(Math.sin(i * 0.35 + wavePhase)) * (h * 0.85) + 3;
-          const x = i * (barWidth + gap);
-          const y = (h - amp) / 2;
-
-          ctx.fillStyle = strokeColor;
-          ctx.beginPath();
-          ctx.roundRect(x, y, barWidth, amp, [2, 2, 2, 2]);
-          ctx.fill();
-        }
-        animId = requestAnimationFrame(() => drawWaveform(isListening));
-      }
-    }
-    drawWaveform(false);
-
-    // =========================================================================
-    // INTERACTIVE BROWSER PUSH-TO-TALK BUTTON
-    // =========================================================================
-    let pttActive = false;
-    function startWebPtt() {
-      if (pttActive) return;
-      pttActive = true;
-      webPttBtn.classList.add('active');
-      handleServerEvent({ event: 'voice_start' });
-    }
-
-    function stopWebPtt() {
-      if (!pttActive) return;
-      pttActive = false;
-      webPttBtn.classList.remove('active');
-      handleServerEvent({ event: 'voice_stop' });
-      // Send sample query for testing in web browser
-      setTimeout(() => {
-        const sampleCommands = ["Open Chrome", "Get system stats", "What time is it?"];
-        const chosen = sampleCommands[Math.floor(Math.random() * sampleCommands.length)];
-        quickSend(chosen);
-      }, 500);
-    }
-
-    webPttBtn.addEventListener('mousedown', startWebPtt);
-    webPttBtn.addEventListener('mouseup', stopWebPtt);
-    webPttBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startWebPtt(); });
-    webPttBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopWebPtt(); });
-
-    // =========================================================================
-    // CONVERSATION CARDS & AUDIT HISTORY
-    // =========================================================================
-    function addTurnCard(data) {
       const card = document.createElement('div');
-      card.className = 'card';
+      card.className = 'turn-card';
+
+      const timeFormatted = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
       const header = document.createElement('div');
-      header.className = 'card-header';
-
-      const promptWrap = document.createElement('div');
-      promptWrap.className = 'prompt-text';
-      promptWrap.innerHTML = `<span>${data.source === 'voice' ? '🎙️' : '💬'}</span> <span>${escapeHtml(data.prompt)}</span>`;
-
-      const meta = document.createElement('div');
-      meta.className = 'card-meta';
-      meta.innerHTML = `<span>${new Date().toLocaleTimeString()}</span>`;
-
-      header.appendChild(promptWrap);
-      header.appendChild(meta);
+      header.className = 'turn-header';
+      header.innerHTML = `
+        <div class="prompt-row">
+          <span class="source-tag ${data.source === 'voice' ? 'voice' : 'text'}">${data.source === 'voice' ? 'Voice' : 'Prompt'}</span>
+          <span class="prompt-string">${escapeHtml(data.prompt)}</span>
+        </div>
+        <div class="turn-meta">
+          <span>${timeFormatted}</span>
+        </div>
+      `;
       card.appendChild(header);
 
       if (data.tools && data.tools.length > 0) {
-        const toolsWrap = document.createElement('div');
-        toolsWrap.style.display = 'flex';
-        toolsWrap.style.gap = '6px';
-        toolsWrap.style.flexWrap = 'wrap';
-
-        data.tools.forEach(t => {
+        const toolsRow = document.createElement('div');
+        toolsRow.className = 'turn-tools';
+        data.tools.forEach(toolName => {
           const badge = document.createElement('span');
           badge.className = 'tool-badge';
-          badge.innerHTML = `⚙️ ${escapeHtml(t)}`;
-          toolsWrap.appendChild(badge);
+          badge.innerHTML = `<span>⚙️</span><span>${escapeHtml(toolName)}</span>`;
+          toolsRow.appendChild(badge);
         });
-        card.appendChild(toolsWrap);
+        card.appendChild(toolsRow);
       }
 
-      const body = document.createElement('div');
-      body.className = 'response-body';
-      body.textContent = data.output;
-      card.appendChild(body);
+      const outputBody = document.createElement('div');
+      outputBody.className = 'turn-output';
+      outputBody.textContent = data.output || '';
+      card.appendChild(outputBody);
 
-      streamContainer.prepend(card);
-      currentCardBody = body;
+      activityFeed.appendChild(card);
+      scrollFeedToBottom();
+
+      return outputBody;
+    }
+
+    function scrollFeedToBottom() {
+      activityFeed.scrollTop = activityFeed.scrollHeight;
     }
 
     function escapeHtml(str) {
@@ -1189,253 +1128,258 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // Input form dispatch
-    chatForm.addEventListener('submit', async (e) => {
+    // Submit Prompt via WebSocket or REST fallback
+    promptForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const text = chatInput.value.trim();
+      const text = promptInput.value.trim();
       if (!text) return;
-      chatInput.value = '';
+      promptInput.value = '';
 
       if (ws && ws.readyState === WebSocket.OPEN) {
-        addTurnCard({ source: 'text', prompt: text, output: '', tools: [] });
-        ws.send(JSON.stringify({ text: text, source: 'text' }));
+        activeCardOutputElem = appendTurnCard({
+          source: 'text',
+          prompt: text,
+          output: '',
+          tools: [],
+          timestamp: new Date().toISOString()
+        });
+        ws.send(JSON.stringify({ text: text, source: 'web' }));
       } else {
+        // Fallback to HTTP POST /api/prompt
+        const outElem = appendTurnCard({
+          source: 'text',
+          prompt: text,
+          output: 'Executing...',
+          tools: [],
+          timestamp: new Date().toISOString()
+        });
         try {
           const resp = await fetch('/api/prompt', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, source: 'text' })
+            body: JSON.stringify({ text: text, source: 'web' })
           });
           const res = await resp.json();
-          addTurnCard({ source: 'text', prompt: text, output: res.output, tools: res.tools_used || [] });
+          outElem.textContent = res.output || 'Done.';
         } catch (err) {
-          addTurnCard({ source: 'text', prompt: text, output: `Error: ${err.message}`, tools: [] });
+          outElem.textContent = `Error: ${err.message}`;
         }
       }
     });
 
-    window.quickSend = function(text) {
-      chatInput.value = text;
-      chatForm.dispatchEvent(new Event('submit'));
+    window.sendPrompt = function(promptText) {
+      promptInput.value = promptText;
+      promptForm.dispatchEvent(new Event('submit'));
     };
 
-    // Load initial history
-    async function loadHistory() {
-      try {
-        const resp = await fetch('/api/history?limit=12');
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.history) {
-            data.history.forEach(item => {
-              addTurnCard({
-                source: item.source || 'text',
-                prompt: item.prompt,
-                output: item.output,
-                tools: item.tools_used || []
-              });
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("Could not load history:", err);
+    // Keyboard shortcut: '/' focuses prompt input
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== promptInput) {
+        e.preventDefault();
+        promptInput.focus();
       }
-    }
+    });
+
+    document.getElementById('clear-feed-btn').addEventListener('click', () => {
+      activityFeed.innerHTML = '';
+      if (emptyState) {
+        activityFeed.appendChild(emptyState);
+        emptyState.style.display = 'flex';
+      }
+    });
 
     // =========================================================================
-    // MCP TOOLS DRAWER
+    // MANUAL PUSH-TO-TALK BUTTON (FOR BROWSER TESTING)
     // =========================================================================
-    const toolsModal = document.getElementById('tools-modal');
-    const openToolsBtn = document.getElementById('open-tools-btn');
-    const closeToolsBtn = document.getElementById('close-tools-btn');
-    const toolSearchInput = document.getElementById('tool-search-input');
-    const toolGridContainer = document.getElementById('tool-grid-container');
-    const toolsBadgeCount = document.getElementById('tools-badge-count');
-    const modalToolsCount = document.getElementById('modal-tools-count');
+    let manualHold = false;
+    function startManualPtt() {
+      if (manualHold) return;
+      manualHold = true;
+      manualPttBtn.classList.add('active');
+      manualPttText.innerText = 'Listening... (Release to send)';
+      voiceBanner.classList.add('active');
+      voiceTranscriptText.innerText = 'Listening to browser speech...';
+    }
+
+    function stopManualPtt() {
+      if (!manualHold) return;
+      manualHold = false;
+      manualPttBtn.classList.remove('active');
+      manualPttText.innerText = 'Hold to Speak';
+      voiceTranscriptText.innerText = 'Processing command...';
+      setTimeout(() => {
+        voiceBanner.classList.remove('active');
+        sendPrompt('Get system stats and active window');
+      }, 400);
+    }
+
+    manualPttBtn.addEventListener('mousedown', startManualPtt);
+    manualPttBtn.addEventListener('mouseup', stopManualPtt);
+    manualPttBtn.addEventListener('mouseleave', stopManualPtt);
+
+    // =========================================================================
+    // TELEMETRY & CONFIG LOADING
+    // =========================================================================
+    async function loadTelemetry() {
+      try {
+        const resp = await fetch('/api/config');
+        if (resp.ok) {
+          const data = await resp.json();
+          const cfg = data.config || {};
+          document.getElementById('telemetry-model').innerText = cfg.llm_model || 'gemma4:31b-cloud';
+          document.getElementById('telemetry-model-short').innerText = cfg.llm_preset ? cfg.llm_preset.toUpperCase() : 'LLM';
+          document.getElementById('telemetry-endpoint').innerText = (cfg.llm_url || '').replace('http://', '').replace('/v1', '');
+          document.getElementById('telemetry-stt').innerText = cfg.voice_model || 'whisper-large-v3';
+
+          // Preload modal inputs
+          document.getElementById('cfg-llm-url').value = cfg.llm_url || '';
+          document.getElementById('cfg-llm-model').value = cfg.llm_model || '';
+          document.getElementById('cfg-llm-key').value = cfg.llm_key || '';
+          document.getElementById('cfg-voice-url').value = cfg.voice_url || '';
+          document.getElementById('cfg-voice-key').value = cfg.voice_key || '';
+        }
+      } catch (e) {
+        console.warn("Telemetry load warning:", e);
+      }
+    }
 
     async function loadMcpTools() {
       try {
         const resp = await fetch('/api/mcp/tools');
         if (resp.ok) {
           const data = await resp.json();
-          toolsCache = data.tools || [];
-          toolsBadgeCount.innerText = `${data.count} Tools`;
-          modalToolsCount.innerText = data.count;
-          renderToolGrid(toolsCache);
+          mcpToolsCache = data.tools || [];
+          document.getElementById('tools-count-pill').innerText = data.count || mcpToolsCache.length;
+          document.getElementById('telemetry-tools-count').innerText = `${data.count || mcpToolsCache.length} MCP`;
+          document.getElementById('tools-dialog-count').innerText = data.count || mcpToolsCache.length;
+          renderToolsList(mcpToolsCache);
         }
       } catch (e) {
-        console.warn("Could not load MCP tools:", e);
+        console.warn("Tools load warning:", e);
       }
     }
 
-    function renderToolGrid(tools) {
-      toolGridContainer.innerHTML = '';
+    function renderToolsList(tools) {
+      const container = document.getElementById('tools-container');
+      container.innerHTML = '';
       tools.forEach(t => {
         const item = document.createElement('div');
-        item.className = 'tool-item';
+        item.className = 'tool-list-item';
         item.innerHTML = `
-          <div class="tool-name">⚡ ${escapeHtml(t.name)}</div>
-          <div class="tool-desc">${escapeHtml(t.description || 'Native workstation action')}</div>
+          <div class="tool-list-name">${escapeHtml(t.name)}</div>
+          <div class="tool-list-desc">${escapeHtml(t.description || 'Native capability')}</div>
         `;
-        toolGridContainer.appendChild(item);
+        container.appendChild(item);
       });
     }
 
-    toolSearchInput.addEventListener('input', () => {
-      const q = toolSearchInput.value.toLowerCase().trim();
-      const filtered = toolsCache.filter(t => t.name.toLowerCase().includes(q) || (t.description && t.description.toLowerCase().includes(q)));
-      renderToolGrid(filtered);
+    document.getElementById('tools-search-box').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const filtered = mcpToolsCache.filter(t => t.name.toLowerCase().includes(q) || (t.description && t.description.toLowerCase().includes(q)));
+      renderToolsList(filtered);
     });
 
-    openToolsBtn.addEventListener('click', () => {
-      loadMcpTools();
-      toolsModal.style.display = 'flex';
-    });
-    closeToolsBtn.addEventListener('click', () => { toolsModal.style.display = 'none'; });
-
     // =========================================================================
-    // SOUND THEMES & AUDITIONS
+    // SOUND THEMES & PREVIEWS
     // =========================================================================
-    const soundThemeSelect = document.getElementById('sound-theme-select');
-    const auditionSoundBtn = document.getElementById('audition-sound-btn');
+    const soundThemePicker = document.getElementById('sound-theme-picker');
+    const soundTestBtn = document.getElementById('sound-test-btn');
 
-    const soundThemes = {
-      minimal: { start: 'minimal_wake', release: 'minimal_notification', finish: 'minimal_complete' },
-      glass: { start: 'glass_wake', release: 'glass_notification', finish: 'glass_complete' },
-      soft: { start: 'soft_wake', release: 'soft_notification', finish: 'soft_complete' },
-      scifi: { start: 'scifi_wake', release: 'scifi_notification', finish: 'scifi_complete' },
-      zen: { start: 'zen_wake', release: 'zen_notification', finish: 'zen_complete' },
-      synth: { start: 'bloom', release: 'minimal_notification', finish: 'chime' }
-    };
-
-    async function initSoundControls() {
+    async function initSoundSettings() {
       try {
         const resp = await fetch('/api/sounds');
         if (resp.ok) {
           const data = await resp.json();
-          const activeStart = data.active?.start_sound || '';
-          for (const [theme, cfg] of Object.entries(soundThemes)) {
-            if (activeStart.includes(cfg.start) || cfg.start === activeStart) {
-              soundThemeSelect.value = theme;
+          const start = data.active?.start_sound || '';
+          for (const [t, val] of Object.entries(data.themes || {})) {
+            if (val.start === start) {
+              soundThemePicker.value = t;
               break;
             }
           }
         }
       } catch (e) {
-        console.warn("Could not load sounds:", e);
+        console.warn("Sound settings warning:", e);
       }
 
-      soundThemeSelect.addEventListener('change', async () => {
-        const selected = soundThemeSelect.value;
-        const cfg = soundThemes[selected];
-        if (!cfg) return;
-
-        try {
+      soundThemePicker.addEventListener('change', async () => {
+        const chosen = soundThemePicker.value;
+        const themeMap = {
+          minimal: { start: 'minimal_wake', release: 'minimal_notification', finish: 'minimal_complete' },
+          glass: { start: 'glass_wake', release: 'glass_notification', finish: 'glass_complete' },
+          soft: { start: 'soft_wake', release: 'soft_notification', finish: 'soft_complete' },
+          scifi: { start: 'scifi_wake', release: 'scifi_notification', finish: 'scifi_complete' },
+          zen: { start: 'zen_wake', release: 'zen_notification', finish: 'zen_complete' },
+          synth: { start: 'bloom', release: 'minimal_notification', finish: 'chime' }
+        };
+        const s = themeMap[chosen];
+        if (s) {
           await fetch('/api/sounds/set', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start_sound: cfg.start, release_sound: cfg.release, finish_sound: cfg.finish })
+            body: JSON.stringify({ start_sound: s.start, release_sound: s.release, finish_sound: s.finish })
           });
           await fetch('/api/sounds/play', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sound: cfg.finish })
+            body: JSON.stringify({ sound: s.finish })
           });
-        } catch (err) {
-          console.error("Failed setting sound theme:", err);
         }
       });
 
-      auditionSoundBtn.addEventListener('click', async () => {
-        const selected = soundThemeSelect.value;
-        const cfg = soundThemes[selected];
-        if (cfg) {
-          await fetch('/api/sounds/play', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sound: cfg.finish })
-          });
-        }
+      soundTestBtn.addEventListener('click', async () => {
+        const chosen = soundThemePicker.value;
+        const map = { minimal: 'minimal_complete', glass: 'glass_complete', soft: 'soft_complete', scifi: 'scifi_complete', zen: 'zen_complete', synth: 'chime' };
+        await fetch('/api/sounds/play', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sound: map[chosen] || 'minimal_complete' })
+        });
       });
     }
 
     // =========================================================================
-    // CONFIG MODAL LOGIC
+    // MODAL DIALOG CONTROLS
     // =========================================================================
-    const configModal = document.getElementById('config-modal');
-    const openConfigBtn = document.getElementById('open-config-btn');
-    const closeConfigBtn = document.getElementById('close-config-btn');
-    const cancelConfigBtn = document.getElementById('cancel-config-btn');
-    const saveConfigBtn = document.getElementById('save-config-btn');
+    const toolsModal = document.getElementById('tools-modal-backdrop');
+    const configModal = document.getElementById('config-modal-backdrop');
 
-    const cfgLlmUrl = document.getElementById('cfg-llm-url');
-    const cfgLlmModel = document.getElementById('cfg-llm-model');
-    const cfgLlmKey = document.getElementById('cfg-llm-key');
-    const cfgVoiceUrl = document.getElementById('cfg-voice-url');
-    const cfgVoiceModel = document.getElementById('cfg-voice-model');
-    const cfgVoiceKey = document.getElementById('cfg-voice-key');
+    document.getElementById('open-tools-btn').addEventListener('click', () => toolsModal.classList.add('open'));
+    window.closeToolsModal = () => toolsModal.classList.remove('open');
 
-    window.selectLlmPreset = function(preset) {
-      if (preset === 'ollama') {
-        cfgLlmUrl.value = 'http://localhost:11434/v1';
-        cfgLlmModel.value = 'gemma4:31b-cloud';
-        cfgLlmKey.value = 'ollama';
-      } else if (preset === 'groq') {
-        cfgLlmUrl.value = 'https://api.groq.com/openai/v1';
-        cfgLlmModel.value = 'llama-3.3-70b-versatile';
-        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
-      } else if (preset === 'openrouter') {
-        cfgLlmUrl.value = 'https://openrouter.ai/api/v1';
-        cfgLlmModel.value = 'meta-llama/llama-3.3-70b-instruct';
-        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
-      }
-    };
-
-    window.selectVoicePreset = function(preset) {
-      if (preset === 'groq-whisper') {
-        cfgVoiceUrl.value = 'https://api.groq.com/openai/v1';
-        cfgVoiceModel.value = 'whisper-large-v3-turbo';
-      } else if (preset === 'local-whisper') {
-        cfgVoiceUrl.value = 'http://localhost:8000/v1';
-        cfgVoiceModel.value = 'whisper-1';
-        cfgVoiceKey.value = 'local-key';
-      }
-    };
-
-    async function loadConfigModal() {
-      try {
-        const resp = await fetch('/api/config');
-        if (resp.ok) {
-          const data = await resp.json();
-          const c = data.config || {};
-          cfgLlmUrl.value = c.llm_url || '';
-          cfgLlmModel.value = c.llm_model || '';
-          cfgLlmKey.value = c.llm_key || '';
-          cfgVoiceUrl.value = c.voice_url || '';
-          cfgVoiceModel.value = c.voice_model || '';
-          cfgVoiceKey.value = c.voice_key || '';
-        }
-      } catch (err) {
-        console.warn("Could not load config:", err);
-      }
-    }
-
-    openConfigBtn.addEventListener('click', () => {
-      loadConfigModal();
-      configModal.style.display = 'flex';
+    document.getElementById('open-config-btn').addEventListener('click', () => {
+      loadTelemetry();
+      configModal.classList.add('open');
     });
-    closeConfigBtn.addEventListener('click', () => { configModal.style.display = 'none'; });
-    cancelConfigBtn.addEventListener('click', () => { configModal.style.display = 'none'; });
+    window.closeConfigModal = () => configModal.classList.remove('open');
 
-    saveConfigBtn.addEventListener('click', async () => {
-      saveConfigBtn.disabled = true;
-      saveConfigBtn.innerText = 'Saving...';
+    window.applyPreset = (p) => {
+      if (p === 'ollama') {
+        document.getElementById('cfg-llm-url').value = 'http://localhost:11434/v1';
+        document.getElementById('cfg-llm-model').value = 'gemma4:31b-cloud';
+        document.getElementById('cfg-llm-key').value = 'ollama';
+      } else if (p === 'groq') {
+        document.getElementById('cfg-llm-url').value = 'https://api.groq.com/openai/v1';
+        document.getElementById('cfg-llm-model').value = 'llama-3.3-70b-versatile';
+        if (document.getElementById('cfg-llm-key').value === 'ollama') document.getElementById('cfg-llm-key').value = '';
+      } else if (p === 'openrouter') {
+        document.getElementById('cfg-llm-url').value = 'https://openrouter.ai/api/v1';
+        document.getElementById('cfg-llm-model').value = 'meta-llama/llama-3.3-70b-instruct';
+        if (document.getElementById('cfg-llm-key').value === 'ollama') document.getElementById('cfg-llm-key').value = '';
+      }
+    };
+
+    document.getElementById('save-cfg-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('save-cfg-btn');
+      btn.innerText = 'Saving...';
+      btn.disabled = true;
+
       const updates = {
-        OPENAI_BASE_URL: cfgLlmUrl.value.trim(),
-        OPENAI_MODEL: cfgLlmModel.value.trim(),
-        OPENAI_API_KEY: cfgLlmKey.value.trim(),
-        VOICE_BASE_URL: cfgVoiceUrl.value.trim(),
-        VOICE_MODEL: cfgVoiceModel.value.trim(),
-        VOICE_API_KEY: cfgVoiceKey.value.trim(),
+        OPENAI_BASE_URL: document.getElementById('cfg-llm-url').value.trim(),
+        OPENAI_MODEL: document.getElementById('cfg-llm-model').value.trim(),
+        OPENAI_API_KEY: document.getElementById('cfg-llm-key').value.trim(),
+        VOICE_BASE_URL: document.getElementById('cfg-voice-url').value.trim(),
+        VOICE_API_KEY: document.getElementById('cfg-voice-key').value.trim(),
       };
 
       try {
@@ -1445,27 +1389,26 @@
           body: JSON.stringify(updates)
         });
         if (resp.ok) {
-          configModal.style.display = 'none';
+          closeConfigModal();
+          loadTelemetry();
         }
       } catch (e) {
-        alert("Failed to save config: " + e.message);
+        alert("Failed saving config: " + e.message);
       } finally {
-        saveConfigBtn.disabled = false;
-        saveConfigBtn.innerText = 'Save & Hot-Reload';
+        btn.innerText = 'Save & Hot-Reload';
+        btn.disabled = false;
       }
     });
 
-    // Close modals on backdrop click
-    window.addEventListener('click', (e) => {
-      if (e.target === configModal) configModal.style.display = 'none';
-      if (e.target === toolsModal) toolsModal.style.display = 'none';
-    });
+    // Close on backdrop click
+    toolsModal.addEventListener('click', (e) => { if (e.target === toolsModal) closeToolsModal(); });
+    configModal.addEventListener('click', (e) => { if (e.target === configModal) closeConfigModal(); });
 
-    // Initialization
-    connectWebSocket();
-    loadHistory();
+    // Initial Bootstrap
+    initWebSocket();
+    loadTelemetry();
     loadMcpTools();
-    initSoundControls();
+    initSoundSettings();
   </script>
 </body>
 </html>
