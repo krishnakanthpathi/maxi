@@ -6,7 +6,7 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", str(Path.home() / ".maxi" / ".env")),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True
@@ -61,14 +61,34 @@ class Settings(BaseSettings):
         description="Enable global Control+Space push-to-talk listener inside the daemon"
     )
     voice_start_sound: str = Field(
-        default="Ping",
+        default="minimal_wake",
         alias="VOICE_START_SOUND",
-        description="macOS sound played when recording starts (e.g. Ping, Bottle, Glass)"
+        description="Sound played when recording starts (from app/sounds or macOS system)"
+    )
+    voice_release_sound: str = Field(
+        default="minimal_notification",
+        alias="VOICE_RELEASE_SOUND",
+        description="Sound played when recording stops/sends (from app/sounds or macOS system)"
     )
     voice_finish_sound: str = Field(
-        default="Glass",
+        default="minimal_complete",
         alias="VOICE_FINISH_SOUND",
-        description="macOS sound played when voice command completes (e.g. Glass, Bottle, Ping)"
+        description="Sound played when voice command completes and result is returned (from app/sounds or macOS system)"
+    )
+    voice_auto_endpoint: bool = Field(
+        default=True,
+        alias="VOICE_AUTO_ENDPOINT",
+        description="Automatically detect end of speech silence (800ms) and execute without requiring a second tap"
+    )
+    voice_silence_threshold: float = Field(
+        default=0.012,
+        alias="VOICE_SILENCE_THRESHOLD",
+        description="Audio RMS amplitude below which audio is treated as silence"
+    )
+    voice_silence_duration: float = Field(
+        default=0.8,
+        alias="VOICE_SILENCE_DURATION",
+        description="Silence duration in seconds before auto-stopping recording"
     )
 
     def get_voice_api_key(self) -> str:

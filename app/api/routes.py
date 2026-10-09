@@ -118,3 +118,88 @@ async def reload_configuration():
         "skills_count": len(skill_registry.list_skills()),
         "mcp_tools_count": len(tools)
     }
+
+
+class SoundPlayRequest(BaseModel):
+    sound: str = Field(..., description="Name or relative file path of the sound to play")
+
+
+class SoundSetRequest(BaseModel):
+    start_sound: Optional[str] = Field(None, description="Sound to play when recording starts")
+    release_sound: Optional[str] = Field(None, description="Sound to play when recording stops/sends")
+    finish_sound: Optional[str] = Field(None, description="Sound to play when result is ready")
+    auto_endpoint: Optional[bool] = Field(None, description="Enable/disable VAD silence auto-endpointing")
+
+
+@router.get("/sounds")
+async def list_sounds():
+    """List all available modern UI sounds and currently active sound settings."""
+    from app.core.voice_service import resolve_sound_path
+    sounds_dir = Path(__file__).resolve().parent.parent / "sounds"
+    available = []
+    if sounds_dir.exists():
+        for p in sorted(sounds_dir.glob("*.*")):
+            if p.suffix.lower() in (".mp3", ".wav", ".aiff", ".m4a", ".ogg"):
+                available.append(p.stem)
+
+    themes = {
+        "minimal": {"start": "minimal_wake", "release": "minimal_notification", "finish": "minimal_complete", "description": "Linear / modern clean UI clicks"},
+        "glass": {"start": "glass_wake", "release": "glass_notification", "finish": "glass_complete", "description": "Crystal ping and airy acoustic resonance"},
+        "soft": {"start": "soft_wake", "release": "soft_notification", "finish": "soft_complete", "description": "Warm, mellow, tactile non-intrusive chimes"},
+        "scifi": {"start": "scifi_wake", "release": "scifi_notification", "finish": "scifi_complete", "description": "High-tech Jarvis / digital assistant chirp"},
+        "zen": {"start": "zen_wake", "release": "zen_notification", "finish": "zen_complete", "description": "Calm, meditative singing bowl tone"},
+        "synth": {"start": "bloom", "release": "minimal_notification", "finish": "chime", "description": "Synthesized pure sine harmonic bloom & chord"}
+    }
+
+    return {
+        "active": {
+            "start_sound": settings.voice_start_sound,
+            "release_sound": settings.voice_release_sound,
+            "finish_sound": settings.voice_finish_sound,
+            "auto_endpoint": settings.voice_auto_endpoint
+        },
+        "themes": themes,
+        "available_files": available
+    }
+
+
+@router.post("/sounds/play")
+async def preview_sound(request: SoundPlayRequest):
+    """Audition / preview a sound on local workstation speakers."""
+    from app.core.voice_service import play_sound, resolve_sound_path
+    resolved = resolve_sound_path(request.sound)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"Sound '{request.sound}' not found")
+    play_sound(request.sound)
+    return {"status": "playing", "sound": request.sound, "file": str(resolved.name)}
+
+
+@router.post("/sounds/set")
+async def set_active_sounds(request: SoundSetRequest):
+    """Set active start, release, finish sounds and auto-endpointing dynamically."""
+    from app.core.voice_service import resolve_sound_path
+    updated = {}
+    if request.start_sound is not None:
+        if not resolve_sound_path(request.start_sound) and request.start_sound.lower() not in ("none", "off"):
+            raise HTTPException(status_code=404, detail=f"Start sound '{request.start_sound}' not found")
+        settings.voice_start_sound = request.start_sound
+        updated["start_sound"] = request.start_sound
+
+    if request.release_sound is not None:
+        if not resolve_sound_path(request.release_sound) and request.release_sound.lower() not in ("none", "off"):
+            raise HTTPException(status_code=404, detail=f"Release sound '{request.release_sound}' not found")
+        settings.voice_release_sound = request.release_sound
+        updated["release_sound"] = request.release_sound
+
+    if request.finish_sound is not None:
+        if not resolve_sound_path(request.finish_sound) and request.finish_sound.lower() not in ("none", "off"):
+            raise HTTPException(status_code=404, detail=f"Finish sound '{request.finish_sound}' not found")
+        settings.voice_finish_sound = request.finish_sound
+        updated["finish_sound"] = request.finish_sound
+
+    if request.auto_endpoint is not None:
+        settings.voice_auto_endpoint = request.auto_endpoint
+        updated["auto_endpoint"] = request.auto_endpoint
+
+    return {"status": "updated", "active": updated}
+

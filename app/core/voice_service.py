@@ -32,12 +32,44 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 
 
+def resolve_sound_path(sound_name: str) -> Optional[Path]:
+    """Resolves sound name from app/sounds directory, absolute path, or system fallback."""
+    if not sound_name or sound_name.lower() in ("none", "off", "disabled"):
+        return None
+    # Direct path
+    p = Path(sound_name)
+    if p.exists() and p.is_file():
+        return p
+
+    # app/sounds/ directory
+    sounds_dir = Path(__file__).resolve().parent.parent / "sounds"
+    for ext in ("", ".mp3", ".wav", ".aiff", ".m4a", ".ogg"):
+        cand = sounds_dir / f"{sound_name}{ext}"
+        if cand.exists() and cand.is_file():
+            return cand
+
+    # macOS system sounds fallback
+    if sys.platform == "darwin":
+        cand = Path(f"/System/Library/Sounds/{sound_name}.aiff")
+        if cand.exists():
+            return cand
+    return None
+
+
 def play_sound(sound_name: str):
     """Play audio chime (macOS native afplay, graceful on Windows)."""
+    resolved = resolve_sound_path(sound_name)
+    if not resolved:
+        return
     if sys.platform == "darwin":
-        sound_path = f"/System/Library/Sounds/{sound_name}.aiff"
-        if os.path.exists(sound_path):
-            subprocess.Popen(["afplay", sound_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(["afplay", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif sys.platform == "win32":
+        try:
+            import winsound
+            if resolved.suffix.lower() == ".wav":
+                winsound.PlaySound(str(resolved), winsound.SND_ASYNC | winsound.SND_FILENAME)
+        except Exception:
+            pass
 
 
 def show_notification(title: str, message: str, subtitle: str = ""):
@@ -70,6 +102,11 @@ class VoiceHotkeyService:
         self.press_time = 0.0
 
         self.audio_buffer: List[np.ndarray] = []
+        self.last_interim_transcript: str = ""
+        self.speech_detected = False
+        self.last_speech_time = 0.0
+        self.last_key_press_time = 0.0
+        self.last_key_release_time = 0.0
         self.lock = threading.RLock()
 
     def _broadcast(self, msg: dict):
@@ -114,6 +151,10 @@ class VoiceHotkeyService:
     def _audio_callback(self, indata, frames, time_info, status):
         if self.is_recording:
             self.audio_buffer.append(indata.copy())
+            rms = float(np.sqrt(np.mean(indata**2)))
+            if rms >= settings.voice_silence_threshold:
+                self.speech_detected = True
+                self.last_speech_time = time.time()
 
     def start_recording(self):
         with self.lock:
@@ -121,6 +162,9 @@ class VoiceHotkeyService:
                 return
             self.is_recording = True
             self.audio_buffer = []
+            self.speech_detected = False
+            self.last_speech_time = time.time()
+            self.press_time = time.time()
 
             play_sound(settings.voice_start_sound)
             self._broadcast({"event": "voice_start"})
@@ -134,32 +178,86 @@ class VoiceHotkeyService:
                     callback=self._audio_callback
                 )
                 self._stream.start()
+                # Launch live speech streaming & silence detection worker
+                threading.Thread(target=self._stream_transcription_worker, daemon=True).start()
             except Exception as e:
                 logger.error(f"Failed to open microphone audio stream: {e}")
                 self.is_recording = False
                 self.is_locked = False
                 self._broadcast({"event": "voice_stop"})
 
+    def _stream_transcription_worker(self):
+        """Continuously streams interim transcripts while user speaks and handles silence VAD endpointing."""
+        last_text = ""
+        time.sleep(0.3)
+        while self.is_recording:
+            now = time.time()
+
+            # 1. Silence VAD Endpointing (auto-stop when silence detected after speaking)
+            if self.speech_detected and settings.voice_auto_endpoint:
+                silence_elapsed = now - self.last_speech_time
+                if (now - self.press_time) > 0.6 and silence_elapsed >= settings.voice_silence_duration:
+                    logger.info(f"⏱️ Voice silence detected ({silence_elapsed:.2f}s). Auto-endpointing...")
+                    self.stop_recording()
+                    break
+
+            # 2. Idle timeout (no speech for 6s)
+            if not self.speech_detected and (now - self.press_time) > 6.0:
+                logger.info("⏱️ No speech detected within 6s timeout. Auto-canceling...")
+                self.stop_recording()
+                break
+
+            # 3. Interim transcription
+            chunks = []
+            with self.lock:
+                if not self.is_recording:
+                    break
+                if len(self.audio_buffer) >= 4:
+                    chunks = list(self.audio_buffer)
+
+            if chunks:
+                audio_data = np.concatenate(chunks, axis=0)
+                if len(audio_data) >= SAMPLE_RATE * 0.4:
+                    interim = self._transcribe(audio_data)
+                    clean = interim.strip()
+                    if clean and clean != last_text and clean not in (".", "...", "!", "?"):
+                        last_text = clean
+                        self.last_interim_transcript = clean
+                        logger.info(f"🗣️ Live Voice Stream: \"{clean}\"")
+                        self._broadcast({
+                            "event": "voice_interim_transcript",
+                            "transcript": clean
+                        })
+
+            time.sleep(0.3)
+
     def stop_recording(self):
+        stream_to_stop = None
+        chunks = []
         with self.lock:
             if not self.is_recording:
                 return
             self.is_recording = False
             self.is_locked = False
+            play_sound(settings.voice_release_sound)
             self._broadcast({"event": "voice_stop"})
 
-            if self._stream:
-                try:
-                    self._stream.stop()
-                    self._stream.close()
-                except Exception:
-                    pass
-                self._stream = None
+            stream_to_stop = self._stream
+            self._stream = None
+            chunks = list(self.audio_buffer)
+            self.audio_buffer = []
 
-        if not self.audio_buffer:
+        # Stop audio stream outside the lock so no PortAudio deadlocks occur
+        if stream_to_stop:
+            try:
+                stream_to_stop.stop()
+                stream_to_stop.close()
+            except Exception as e:
+                logger.debug(f"Audio stream close error: {e}")
+
+        if not chunks:
             return
 
-        chunks = list(self.audio_buffer)
         threading.Thread(target=self._process_recording, args=(chunks,), daemon=True).start()
 
     def _transcribe(self, audio_data: np.ndarray) -> str:
@@ -203,11 +301,12 @@ class VoiceHotkeyService:
         t0 = time.perf_counter()
         transcript = self._transcribe(audio_data)
         if not transcript or transcript in (".", "...", "!", "?"):
+            transcript = self.last_interim_transcript
+        if not transcript or transcript in (".", "...", "!", "?"):
             logger.info("No recognizable speech detected.")
             return
 
         stt_ms = round((time.perf_counter() - t0) * 1000, 1)
-        play_sound(settings.voice_finish_sound)
         logger.info(f"🗣️ Voice Transcript ({stt_ms}ms): \"{transcript}\"")
 
         # Hand directly to Main Agent
@@ -246,6 +345,9 @@ class VoiceHotkeyService:
             "tools": tools_used
         })
 
+        # Play completion chime AFTER result is ready
+        play_sound(settings.voice_finish_sound)
+
         # Native macOS notification banner (full text)
         show_notification(
             title="Maxi Voice 🎙️",
@@ -254,71 +356,81 @@ class VoiceHotkeyService:
         )
 
     def _on_press(self, key):
-        if self.is_mac:
-            if self._is_mac_right_option(key):
-                logger.info("🔑 Right Option key detected.")
-                with self.lock:
-                    if self.is_recording and self.is_locked:
-                        # Pressed again while locked in -> stop and send!
-                        self.is_locked = False
-                        self.stop_recording()
-                        return
+        now = time.time()
+        if now - self.last_key_press_time < 0.08:
+            return
+        self.last_key_press_time = now
 
-                    if not self.is_recording:
-                        self.press_time = time.time()
-                        self.is_locked = False
-                        self.start_recording()
-        else:
-            # Windows / Linux: Control + Space
-            if self._is_ctrl(key):
-                self.ctrl_pressed = True
-            elif self._is_space(key):
-                self.space_pressed = True
+        # 1. Mac Right Option check
+        if self.is_mac and self._is_mac_right_option(key):
+            logger.info("🔑 Right Option key detected.")
+            with self.lock:
+                if self.is_recording and self.is_locked:
+                    self.is_locked = False
+                    self.stop_recording()
+                    return
+                if not self.is_recording:
+                    self.press_time = time.time()
+                    self.is_locked = False
+                    self.start_recording()
+            return
 
-            if self.ctrl_pressed and self.space_pressed:
-                with self.lock:
-                    if self.is_recording and self.is_locked:
-                        self.is_locked = False
-                        self.stop_recording()
-                        return
+        # 2. Universal Control + Space check (works on Mac, Windows, Linux)
+        if self._is_ctrl(key):
+            self.ctrl_pressed = True
+        elif self._is_space(key):
+            self.space_pressed = True
 
-                    if not self.is_recording:
-                        self.press_time = time.time()
-                        self.is_locked = False
-                        self.start_recording()
+        if self.ctrl_pressed and self.space_pressed:
+            logger.info("🔑 Control + Space hotkey detected.")
+            with self.lock:
+                if self.is_recording and self.is_locked:
+                    self.is_locked = False
+                    self.stop_recording()
+                    return
+                if not self.is_recording:
+                    self.press_time = time.time()
+                    self.is_locked = False
+                    self.start_recording()
 
     def _on_release(self, key):
-        if self.is_mac:
-            if self._is_mac_right_option(key):
-                with self.lock:
-                    if self.is_recording and not self.is_locked:
-                        elapsed = time.time() - self.press_time
-                        if elapsed < 0.4:
-                            # Quick tap (<400ms) -> LOCK IN recording!
-                            self.is_locked = True
-                            logger.info("🔒 Voice recording locked in (tap Right Option again to send).")
-                            self._broadcast({"event": "voice_locked", "locked": True})
-                        else:
-                            # Held down (>400ms) -> Push-to-Talk release!
-                            self.stop_recording()
-        else:
-            # Windows / Linux: Control + Space
-            was_recording = self.is_recording
-            if self._is_ctrl(key):
-                self.ctrl_pressed = False
-            elif self._is_space(key):
-                self.space_pressed = False
+        now = time.time()
+        if now - self.last_key_release_time < 0.08:
+            return
+        self.last_key_release_time = now
 
-            if was_recording and not (self.ctrl_pressed and self.space_pressed):
-                with self.lock:
-                    if self.is_recording and not self.is_locked:
-                        elapsed = time.time() - self.press_time
-                        if elapsed < 0.4:
-                            self.is_locked = True
-                            logger.info("🔒 Voice recording locked in (press Ctrl+Space again to send).")
-                            self._broadcast({"event": "voice_locked", "locked": True})
-                        else:
-                            self.stop_recording()
+        # 1. Mac Right Option release
+        if self.is_mac and self._is_mac_right_option(key):
+            with self.lock:
+                if self.is_recording and not self.is_locked:
+                    elapsed = time.time() - self.press_time
+                    if elapsed < 0.4:
+                        # Quick tap (<400ms) -> LOCK IN recording!
+                        self.is_locked = True
+                        logger.info("🔒 Voice recording locked in (tap hotkey again to send).")
+                        self._broadcast({"event": "voice_locked", "locked": True})
+                    else:
+                        # Held down (>400ms) -> Push-to-Talk release!
+                        self.stop_recording()
+            return
+
+        # 2. Universal Control + Space release
+        was_recording = self.is_recording
+        if self._is_ctrl(key):
+            self.ctrl_pressed = False
+        elif self._is_space(key):
+            self.space_pressed = False
+
+        if was_recording and not (self.ctrl_pressed and self.space_pressed):
+            with self.lock:
+                if self.is_recording and not self.is_locked:
+                    elapsed = time.time() - self.press_time
+                    if elapsed < 0.4:
+                        self.is_locked = True
+                        logger.info("🔒 Voice recording locked in (press hotkey again to send).")
+                        self._broadcast({"event": "voice_locked", "locked": True})
+                    else:
+                        self.stop_recording()
 
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None):
         """Starts the global Push-to-Talk / Lock-in voice listener thread."""

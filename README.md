@@ -1,106 +1,156 @@
-# Maxi Agent ⚡
+# Maxi ⚡
 
-**Maxi** is a cross-platform background AI agent daemon designed for macOS, Linux, and Windows. It provides native OS control via the Model Context Protocol (MCP), dynamic markdown skill orchestration, and local HTTP / WebSocket endpoints for desktop HUDs (Tauri) and external voice plugins (Whisperflow, Willow Voice, etc.).
-
----
-
-## Architecture Overview
+**Maxi** is an ultra-fast, pluggable cross-platform background AI agent daemon designed for macOS, Linux, and Windows workstations. It combines native OS control via the Model Context Protocol (MCP), a 3-chime audio feedback engine, real-time streaming speech recognition with Voice Activity Detection (VAD), and a decoupled frontend architecture.
 
 ```
-[Voice Plugins / Apps]           [Tauri Desktop App]
- (Whisperflow, Willow, Mic)         (Tray, Floating HUD, Hotkeys)
-         │                                   │
-         │ POST /api/voice/webhook           │ WebSocket /ws
-         └───────────────┬───────────────────┘
-                         ▼
-             ┌─────────────────────────┐
-             │   Maxi Daemon (FastAPI) │
-             │   - Skill Registry      │
-             │   - LangChain Core      │
-             │   - MCP Tool Manager    │
-             └───────────┬─────────────┘
-                         │ stdio / SSE
-                         ▼
-             ┌─────────────────────────┐
-             │       MCP Servers       │
-             │   (Native OS, JXA,      │
-             │    Win32, DBus, etc.)   │
-             └─────────────────────────┘
+  __  __              _ 
+ |  \/  | __ ___  __ (_)
+ | |\/| |/ _` \ \/ / | |
+ | |  | | (_| |>  <  | |
+ |_|  |_|\__,_/_/\_\ |_|
 ```
 
 ---
 
-## Features
+## ⚡ Quick Start: One-Line Installer
 
-- **Background Daemon**: Runs quietly on `127.0.0.1:4848`.
-- **OpenAI-Compatible Engine**: Connects to any local (Ollama, LM Studio, vLLM) or remote (OpenRouter, OpenAI) endpoint.
-- **MCP Client Integration**: Aggregates tools from any local or remote MCP servers and binds them to LangChain.
-- **Markdown Skill Engine**: Dynamically matches and injects `.md` skills from `.maxi/skills/` based on prompt intent and source.
-- **Voice Ingest Endpoint**: Pre-configured `POST /api/voice/webhook` ready for external speech transcription engines.
-- **Bidirectional Streaming**: WebSocket (`/ws`) for instant token streaming to desktop HUDs.
-
----
-
-## Getting Started
-
-### 1. Install Dependencies
-Using `uv` (recommended) or `pip`:
+Install and configure Maxi on **macOS** or **Linux** with a single command:
 
 ```bash
-cd /Users/krishnakanth/Projects/maxi
-
-# Create virtual environment
-uv venv
-source .venv/bin/activate
-
-# Install dependencies
-uv pip install -r requirements.txt
+curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash
 ```
 
-### 2. Configure Environment
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
+The installer automatically:
+1. Detects your OS (macOS Apple Silicon/Intel or Linux distribution) and architecture.
+2. Resolves audio dependencies (`libportaudio2`, `libasound2` on Linux).
+3. Creates an isolated environment at `~/.maxi/venv`.
+4. Symlinks the `maxi` CLI into `~/.local/bin/maxi`.
+5. Configures native background service auto-start:
+   - **macOS**: `launchd` LaunchAgent (`~/Library/LaunchAgents/com.maxi.daemon.plist`)
+   - **Linux**: `systemd` user service (`~/.config/systemd/user/maxi.service`)
 
-### 3. Run the Daemon
+---
+
+## 🚀 The `maxi` CLI
+
+Control the background daemon from any terminal:
+
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 4848 --reload
+maxi start     # Start background daemon on http://127.0.0.1:4848
+maxi status    # Inspect daemon PID, health, loaded MCP tools, and active sound theme
+maxi hud       # Open the modern web HUD in your default browser
+maxi stop      # Gracefully stop the background daemon
+maxi run       # Run in foreground (ideal for systemd or development)
 ```
 
 ---
 
-## Configuration: The `.maxi` Directory
+## 🎙️ Voice & Hotkey Features
 
-All runtime, audit logs, and configurations live inside the [`.maxi/`](file:///Users/krishnakanth/Projects/maxi/.maxi) folder:
+### 1. Hardware Hotkeys
+- **macOS**: Tap or hold **Right Option** (with **Control + Space** as universal fallback).
+- **Windows / Linux**: Hold **Control + Space**.
+
+### 2. Dual Interaction Modes
+- **Push-to-Talk (Hold)**: Hold the hotkey, speak your command, release to fire instantly.
+- **Hands-Free Streaming (Tap + Auto-VAD)**: Tap the hotkey once, speak your command, and stop. The built-in Voice Activity Detector (VAD) detects **800ms of silence**, automatically cuts audio, and executes without requiring a second tap.
+
+### 3. Three-Chime Audio Pipeline
+Every spoken interaction provides tactile auditory feedback:
+1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins.
+2. **Release / Send Chime** (`minimal_notification`): Fires when key is released or silence is detected.
+3. **Completion Chime** (`minimal_complete`): Fires after tools execute and final response text is generated.
+
+Sound themes can be auditioned and switched via the Web HUD or API:
+- `minimal` (Linear/Notion-style micro clicks)
+- `glass` (Airy crystal resonance)
+- `soft` (Warm, non-intrusive mellow chimes)
+- `scifi` (Jarvis-style digital chirp)
+- `zen` (Meditative singing bowl tone)
+- `synth` (Synthesized pure sine harmonic bloom & chord)
+
+---
+
+## 🏗️ Architecture: Pluggable Frontends
+
+The backend operates as a headless, event-driven daemon (`localhost:4848`). Any frontend plugs directly into its REST and WebSocket (`ws://localhost:4848/ws`) APIs:
 
 ```text
 maxi/
-├── .maxi/
-│   ├── mcp_config.json        # MCP server definitions
-│   ├── history.jsonl          # Append-only conversation audit log
-│   └── skills/                # Markdown skills (*.md)
-│       ├── os_automation.md
-│       ├── voice_interaction.md
-│       └── system_monitor.md
+├── app/                  # Headless Core Daemon Engine
+│   ├── api/              # REST + WebSocket endpoints
+│   ├── core/             # Agent, Voice Pipeline, MCP Client, Skills
+│   └── sounds/           # Bundled UI audio assets
+├── frontends/            # Pluggable Client Interfaces
+│   ├── web/              # Siri-style Browser HUD
+│   ├── macos/            # Native macOS Swift menu bar app & floating overlay
+│   └── linux/            # Linux desktop indicator & tray (Tauri / GTK)
+└── scripts/
+    └── install.sh        # Universal cross-platform curl installer
 ```
 
-### 1. Stateless Architecture & History Logging
-- **100% Stateless**: Every request is evaluated fresh with zero context pollution from past requests (`Persona + Matched Skill + Fresh MCP Tools + Prompt`).
-- **Audit Logging**: Each completed turn is automatically recorded to `.maxi/history.jsonl` with timestamps, source, prompt, response, and tools used.
+### WebSocket Protocol (`/ws`)
+Connected frontends receive real-time streaming events:
+- `voice_start`: Trigger pulsing orb animation.
+- `voice_interim_transcript`: Real-time streaming subtitles while speaking.
+- `voice_stop`: Transition orb to processing state.
+- `voice_result`: Final prompt, response text, execution latency, and tools used.
+- `chunk`: Incremental token streaming.
 
 ---
 
-## API Endpoints
+## 📦 Python Packaging & PyPI Wheels
 
-| Endpoint | Method | Description |
+Maxi uses modern PEP 517/621 packaging via `pyproject.toml`:
+
+```bash
+# Core headless daemon (lightweight, zero audio drivers)
+pip install maxi-ai
+
+# With push-to-talk voice & audio extras
+pip install "maxi-ai[voice]"
+```
+
+To build wheels locally:
+```bash
+uv build
+# Generated artifacts in dist/:
+# - dist/maxi_ai-0.2.0-py3-none-any.whl
+# - dist/maxi_ai-0.2.0.tar.gz
+```
+
+---
+
+## 🔧 Native MCP Tool Integration
+
+Maxi automatically connects to configured Model Context Protocol (MCP) servers (e.g., `native-assistant-mcp`) configured in `~/.maxi/mcp_config.json` or `.maxi/mcp_config.json`, exposing 70+ native capabilities:
+- Application focus & launching (`open_application`, `close_application`)
+- Workstation automation & window management (`focus_window`, `resize_window`)
+- Audio volume & media playback controls (`volume_set`, `media_control`)
+- Screen capture & clipboard operations (`take_screenshot`, `clipboard_read`)
+- Native notifications & alerts (`notify`, `say_speech`)
+
+---
+
+## ⚙️ Configuration
+
+Environment variables can be set in `.env` or `~/.maxi/.env`:
+
+| Variable | Default | Description |
 | :--- | :--- | :--- |
-| `/api/health` | `GET` | Service liveness probe |
-| `/api/prompt` | `POST` | Primary text prompt runner (stateless) |
-| `/api/voice/webhook` | `POST` | Ingestion endpoint for Whisperflow / Willow transcripts |
-| `/api/mcp/tools` | `GET` | List all connected MCP tools |
-| `/api/history` | `GET` | Fetch recent conversation turns from audit log |
-| `/api/skills` | `GET` | List active skills |
-| `/api/skills/toggle` | `POST` | Enable/disable specific skills |
-| `/api/reload` | `POST` | Hot-reload MCP servers and skills without restarting |
-| `/ws` | `WebSocket` | Real-time bidirectional streaming |
+| `OPENAI_BASE_URL` | `http://localhost:1234/v1` | LLM API endpoint (Ollama, LM Studio, Groq, OpenAI) |
+| `OPENAI_API_KEY` | `sk-local-no-key-required` | API key for LLM endpoint |
+| `OPENAI_MODEL` | `gemma-4-31b` | Target LLM model identifier |
+| `VOICE_BASE_URL` | `https://api.groq.com/openai/v1`| Speech-to-text API endpoint |
+| `VOICE_API_KEY` | *(read from GROQ_API_KEY)* | API key for Whisper transcription |
+| `VOICE_MODEL` | `whisper-large-v3-turbo` | Whisper model for fast STT |
+| `VOICE_START_SOUND` | `minimal_wake` | Audio played when listening starts |
+| `VOICE_RELEASE_SOUND`| `minimal_notification` | Audio played when listening stops/sends |
+| `VOICE_FINISH_SOUND` | `minimal_complete` | Audio played when result is ready |
+| `VOICE_AUTO_ENDPOINT`| `true` | Auto-detect 800ms silence and execute |
+
+---
+
+## 📄 License
+
+MIT License. Designed and crafted for modern local workstations.

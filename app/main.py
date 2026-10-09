@@ -61,9 +61,14 @@ app.include_router(ws_router)
 @app.get("/hud", response_class=HTMLResponse)
 async def serve_hud():
     """Serves the modern Siri-style desktop HUD frontend."""
-    html_path = Path(__file__).resolve().parent / "web" / "index.html"
-    if html_path.exists():
-        return FileResponse(html_path)
+    # Check frontends/web first (monorepo layout), then app/web (installed wheel layout)
+    candidates = [
+        Path(__file__).resolve().parent.parent / "frontends" / "web" / "index.html",
+        Path(__file__).resolve().parent / "web" / "index.html"
+    ]
+    for p in candidates:
+        if p.exists():
+            return FileResponse(p)
     return HTMLResponse("<h1>Maxi Daemon Live</h1>")
 
 
