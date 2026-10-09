@@ -1,7 +1,7 @@
 """
 Maxi Configuration Manager
 Provides unified management for LLM and Voice provider endpoints, API keys, models,
-presets (Ollama local, Jamba cloud, Groq, OpenRouter), and hot-reloading into the running daemon.
+presets (Ollama local, Groq cloud, OpenRouter), and hot-reloading into the running daemon.
 """
 
 import os
@@ -21,22 +21,6 @@ PRESETS = {
         "llm_key": "ollama",
         "llm_model": "llama3.2",
         "requires_key": False
-    },
-    "jamba": {
-        "name": "AI21 Jamba (Cloud Default)",
-        "description": "AI21 Studio Jamba 1.5 hybrid SSM-Transformer with 256k context",
-        "llm_url": "https://api.ai21.com/studio/v1",
-        "llm_key": "",
-        "llm_model": "jamba-1.5-mini",
-        "requires_key": True
-    },
-    "jamba-openrouter": {
-        "name": "Jamba via OpenRouter (Cloud)",
-        "description": "AI21 Jamba hosted on OpenRouter unified gateway",
-        "llm_url": "https://openrouter.ai/api/v1",
-        "llm_key": "",
-        "llm_model": "ai21/jamba-1.5-mini",
-        "requires_key": True
     },
     "groq": {
         "name": "Groq (Cloud Ultra-Fast)",
@@ -205,10 +189,6 @@ def detect_llm_preset(url: str, model: str) -> str:
 
     if "11434" in url_lower or "localhost" in url_lower and "llama" in model_lower:
         return "ollama"
-    if "ai21.com" in url_lower or "jamba" in model_lower:
-        if "openrouter" in url_lower:
-            return "jamba-openrouter"
-        return "jamba"
     if "groq.com" in url_lower:
         return "groq"
     if "openrouter.ai" in url_lower:

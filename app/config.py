@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(
         default="http://localhost:11434/v1",
         alias="OPENAI_BASE_URL",
-        description="Base URL for OpenAI-compatible provider (Ollama local, AI21 Jamba cloud, etc.)"
+        description="Base URL for OpenAI-compatible provider (Ollama local, Groq, OpenRouter, etc.)"
     )
     openai_api_key: str = Field(
         default="ollama",
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     openai_model: str = Field(
         default="llama3.2",
         alias="OPENAI_MODEL",
-        description="Target model identifier (e.g. llama3.2 in Ollama, or jamba-1.5-mini for cloud)"
+        description="Target model identifier (e.g. llama3.2 in Ollama)"
     )
 
     # Voice Service Settings

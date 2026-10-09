@@ -41,7 +41,7 @@ maxi status                      # Inspect daemon PID, health, loaded MCP tools,
 maxi hud                         # Open the modern web HUD in your default browser
 maxi config                      # View active LLM & Voice configuration
 maxi config preset ollama        # Switch to Ollama (Local Default on :11434 with llama3.2)
-maxi config preset jamba         # Switch to AI21 Jamba (Cloud Default with jamba-1.5-mini)
+maxi config preset groq          # Switch to Groq (Cloud ultra-fast LPU)
 maxi config set llm-url <url>    # Set custom OpenAI-compatible endpoint URL
 maxi config set llm-model <name> # Set model name
 maxi config set voice-key <key>  # Set Groq Whisper voice STT API key

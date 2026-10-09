@@ -401,7 +401,6 @@
         <label style="font-size: 0.85rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 8px;">🧠 LLM Provider</label>
         <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
           <button type="button" class="preset-pill" onclick="selectLlmPreset('ollama')">Ollama (Local Default)</button>
-          <button type="button" class="preset-pill" onclick="selectLlmPreset('jamba')">AI21 Jamba (Cloud Default)</button>
           <button type="button" class="preset-pill" onclick="selectLlmPreset('groq')">Groq (Cloud)</button>
           <button type="button" class="preset-pill" onclick="selectLlmPreset('openrouter')">OpenRouter</button>
         </div>
@@ -413,7 +412,7 @@
           </div>
           <div>
             <label style="font-size: 0.78rem; color: var(--text-muted);">Model Identifier</label>
-            <input type="text" id="cfg-llm-model" placeholder="llama3.2 or jamba-1.5-mini" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
+            <input type="text" id="cfg-llm-model" placeholder="llama3.2 or llama-3.3-70b-versatile" style="width: 100%; background: #09090b; border: 1px solid var(--card-border); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 4px;">
           </div>
           <div>
             <label style="font-size: 0.78rem; color: var(--text-muted);">API Key (leave 'ollama' or empty for local)</label>
@@ -778,17 +777,13 @@
         cfgLlmUrl.value = 'http://localhost:11434/v1';
         cfgLlmModel.value = 'llama3.2';
         cfgLlmKey.value = 'ollama';
-      } else if (preset === 'jamba') {
-        cfgLlmUrl.value = 'https://api.ai21.com/studio/v1';
-        cfgLlmModel.value = 'jamba-1.5-mini';
-        if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
       } else if (preset === 'groq') {
         cfgLlmUrl.value = 'https://api.groq.com/openai/v1';
         cfgLlmModel.value = 'llama-3.3-70b-versatile';
         if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
       } else if (preset === 'openrouter') {
         cfgLlmUrl.value = 'https://openrouter.ai/api/v1';
-        cfgLlmModel.value = 'ai21/jamba-1.5-mini';
+        cfgLlmModel.value = 'meta-llama/llama-3.3-70b-instruct';
         if (cfgLlmKey.value === 'ollama') cfgLlmKey.value = '';
       }
     };

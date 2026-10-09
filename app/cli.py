@@ -139,13 +139,12 @@ def _run_config_wizard():
     print("\n🧙 Maxi Interactive Setup Wizard\n")
     print("Select LLM Provider:")
     print("  1) Ollama (Local Default - http://localhost:11434/v1)")
-    print("  2) AI21 Jamba (Cloud Default - https://api.ai21.com/studio/v1)")
-    print("  3) Groq (Cloud - https://api.groq.com/openai/v1)")
-    print("  4) OpenRouter (Cloud - https://openrouter.ai/api/v1)")
-    print("  5) Custom OpenAI-compatible URL")
+    print("  2) Groq (Cloud - https://api.groq.com/openai/v1)")
+    print("  3) OpenRouter (Cloud - https://openrouter.ai/api/v1)")
+    print("  4) Custom OpenAI-compatible URL")
 
     try:
-        choice = input("Enter choice [1-5, default 1]: ").strip() or "1"
+        choice = input("Enter choice [1-4, default 1]: ").strip() or "1"
         updates = {}
         if choice == "1":
             updates["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
@@ -153,18 +152,13 @@ def _run_config_wizard():
             updates["OPENAI_MODEL"] = m
             updates["OPENAI_API_KEY"] = "ollama"
         elif choice == "2":
-            updates["OPENAI_BASE_URL"] = "https://api.ai21.com/studio/v1"
-            updates["OPENAI_MODEL"] = "jamba-1.5-mini"
-            k = input("AI21 Studio API Key: ").strip() or cfg["llm_key"]
-            updates["OPENAI_API_KEY"] = k
-        elif choice == "3":
             updates["OPENAI_BASE_URL"] = "https://api.groq.com/openai/v1"
             updates["OPENAI_MODEL"] = "llama-3.3-70b-versatile"
             k = input("Groq API Key: ").strip() or cfg["llm_key"]
             updates["OPENAI_API_KEY"] = k
-        elif choice == "4":
+        elif choice == "3":
             updates["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
-            updates["OPENAI_MODEL"] = "ai21/jamba-1.5-mini"
+            updates["OPENAI_MODEL"] = "meta-llama/llama-3.3-70b-instruct"
             k = input("OpenRouter API Key: ").strip() or cfg["llm_key"]
             updates["OPENAI_API_KEY"] = k
         else:
@@ -361,8 +355,8 @@ def cmd_config(args):
     print("━" * 58)
     print("Commands:")
     print("  • Switch to Ollama (Local):   maxi config preset ollama")
-    print("  • Switch to Jamba (Cloud):    maxi config preset jamba")
     print("  • Switch to Groq (Cloud):     maxi config preset groq")
+    print("  • Switch to OpenRouter:       maxi config preset openrouter")
     print("  • Set custom setting:         maxi config set llm-url <url>")
     print("                                maxi config set llm-model <model>")
     print("                                maxi config set voice-key <key>")
@@ -397,11 +391,11 @@ def main():
     p_cfg = subparsers.add_parser("config", help="View or update LLM and Voice configuration")
     p_cfg.add_argument("--llm-url", help="Set OpenAI-compatible LLM endpoint URL")
     p_cfg.add_argument("--llm-key", help="Set LLM API key")
-    p_cfg.add_argument("--llm-model", help="Set target model (e.g. llama3.2, jamba-1.5-mini)")
+    p_cfg.add_argument("--llm-model", help="Set target model (e.g. llama3.2, llama-3.3-70b-versatile)")
     p_cfg.add_argument("--voice-url", help="Set Voice STT endpoint URL")
     p_cfg.add_argument("--voice-key", help="Set Voice API key")
     p_cfg.add_argument("--voice-model", help="Set Voice model (e.g. whisper-large-v3-turbo)")
-    p_cfg.add_argument("--preset", help="Quick switch preset (ollama, jamba, groq, openrouter)")
+    p_cfg.add_argument("--preset", help="Quick switch preset (ollama, groq, openrouter)")
     p_cfg.add_argument("-i", "--interactive", action="store_true", help="Launch interactive config wizard")
 
     cfg_sub = p_cfg.add_subparsers(dest="config_action", help="Config subaction")
@@ -416,8 +410,8 @@ def main():
     p_get.add_argument("key_name", help="Key name to inspect")
 
     # config preset <name>
-    p_pre = cfg_sub.add_parser("preset", help="Apply preconfigured profile (ollama, jamba, groq, openrouter)")
-    p_pre.add_argument("preset_name", help="Preset name: ollama, jamba, groq, openrouter, groq-whisper, local-whisper")
+    p_pre = cfg_sub.add_parser("preset", help="Apply preconfigured profile (ollama, groq, openrouter)")
+    p_pre.add_argument("preset_name", help="Preset name: ollama, groq, openrouter, groq-whisper, local-whisper")
     p_pre.add_argument("--key", help="Optional API key for this preset")
 
     # config wizard
