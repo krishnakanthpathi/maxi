@@ -59,22 +59,26 @@ maxi run                         # Run in foreground (ideal for systemd or devel
 
 ---
 
-## 🎙️ Voice & Hotkey Features
+## 🎙️ Voice, Wake Word & Hotkey Features
 
-### 1. Hardware Hotkeys
+### 1. Hands-Free Wake Word Auto-Catch ("Hey Maxi" & "Hey Siri")
+- **Continuous Hands-Free Detection**: Say **"Hey Maxi"** or **"Hey Siri"** hands-free from across the room without touching your keyboard.
+- **Automated Prompt Prefixing**: Every caught voice command is automatically normalized and prefixed with **"Hey Maxi,"** before function activation.
+- **Dual Utterance Support**:
+  - **Single-shot**: *"Hey Maxi, turn the volume up to 50"* — immediately catches, prefixes, and executes.
+  - **Two-stage conversational**: Say *"Hey Maxi"* -> *ding* chime alerts you -> speak your command -> executes!
+- **Zero-Disruption Ambient Filtering**: Background conversation and room noise without authorized wake words are silently discarded with zero false alarms.
+
+### 2. Hardware Push-to-Talk Hotkeys
 - **macOS**: Hold **Right Option (⌥)** (Dedicated modifier; ignores Ctrl+Space to eliminate IDE autocomplete collisions).
 - **Windows / Linux**: Hold **Control + Space**.
-
-### 2. Pure Push-to-Talk (Hold to Speak)
-- **Hold to Speak**: Hold the hotkey down, speak your command naturally, and pause freely without being cut off.
-- **Instant Dispatch**: Releasing the key stops recording and sends your command to the agent immediately.
+- **Instant Dispatch**: Releasing the key stops recording and sends your command immediately.
 - **Typing Protection**: Brief accidental key brushes (<250ms) are silently discarded without playing chimes or dispatching.
-- **No Mid-Sentence Cutoffs**: Auto-endpointing is disabled by default so background silence will never interrupt your sentence.
 
 ### 3. Tactile Audio Pipeline
 Every spoken interaction provides tactile auditory feedback:
-1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins upon pressing the key.
-2. **Release / Send Chime** (`minimal_notification`): Fires when the key is released.
+1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins or wake word is caught.
+2. **Release / Send Chime** (`minimal_notification`): Fires when speech recording finishes.
 3. **Completion Chime** (`minimal_complete`): Fires after tools execute and final response text is generated.
 
 Sound themes can be auditioned and switched via the Web HUD or API:

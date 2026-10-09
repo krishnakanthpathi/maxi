@@ -304,6 +304,9 @@ def cmd_config(args):
             "VOICE_HOTKEY": cfg.get("voice_hotkey", "auto"),
             "VOICE_AUTO_ENDPOINT": cfg["auto_endpoint"],
             "ENABLE_VOICE_HOTKEY": cfg["hotkey_enabled"],
+            "ENABLE_WAKE_WORD": cfg.get("enable_wake_word", True),
+            "VOICE_WAKE_WORDS": cfg.get("wake_words", "hey maxi,hey siri"),
+            "WAKE_WORD_AUTO_PREFIX": cfg.get("wake_word_auto_prefix", True),
         }
         val = mapping.get(canonical, "Unknown key")
         print(f"{k} = {val}")
@@ -385,6 +388,9 @@ def cmd_config(args):
 
     print("⚙️ Audio & Interface:")
     print(f"   Push-to-Talk Hotkey: {hotkey_name} ({'Active' if cfg['hotkey_enabled'] else 'Disabled'})")
+    wake_status = "Active" if cfg.get("enable_wake_word", True) else "Disabled"
+    print(f"   Wake Word Auto-Catch: {wake_status} (Triggers: {cfg.get('wake_words', 'hey maxi,hey siri')})")
+    print(f"   Prompt Auto-Prefix:  {'Enabled (Hey Maxi, ...)' if cfg.get('wake_word_auto_prefix', True) else 'Disabled'}")
     print(f"   Auto-Endpoint:       {'Enabled' if cfg['auto_endpoint'] else 'Disabled (Hold to speak)'}")
     print(f"   Config File:         {cfg['env_file']}")
     print("━" * 58)
@@ -392,6 +398,8 @@ def cmd_config(args):
     print("  • Switch to Ollama (Local):   maxi config preset ollama")
     print("  • Switch to Groq (Cloud):     maxi config preset groq")
     print("  • Switch to OpenRouter:       maxi config preset openrouter")
+    print("  • Toggle hands-free wake:     maxi config set wake-word true/false")
+    print("  • Set wake keywords:          maxi config set wake-words \"hey maxi,hey siri\"")
     print("  • Set custom setting:         maxi config set llm-url <url>")
     print("                                maxi config set llm-model <model>")
     print("                                maxi config set voice-key <key>")

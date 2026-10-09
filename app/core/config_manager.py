@@ -115,6 +115,25 @@ KEY_ALIASES = {
     "enable-voice-hotkey": "ENABLE_VOICE_HOTKEY",
     "enable_voice_hotkey": "ENABLE_VOICE_HOTKEY",
     "ENABLE_VOICE_HOTKEY": "ENABLE_VOICE_HOTKEY",
+
+    # Hands-free Wake Word aliases
+    "wake-word": "ENABLE_WAKE_WORD",
+    "wake_word": "ENABLE_WAKE_WORD",
+    "enable-wake-word": "ENABLE_WAKE_WORD",
+    "enable_wake_word": "ENABLE_WAKE_WORD",
+    "ENABLE_WAKE_WORD": "ENABLE_WAKE_WORD",
+
+    "wake-words": "VOICE_WAKE_WORDS",
+    "wake_words": "VOICE_WAKE_WORDS",
+    "voice-wake-words": "VOICE_WAKE_WORDS",
+    "voice_wake_words": "VOICE_WAKE_WORDS",
+    "VOICE_WAKE_WORDS": "VOICE_WAKE_WORDS",
+
+    "wake-prefix": "WAKE_WORD_AUTO_PREFIX",
+    "wake_prefix": "WAKE_WORD_AUTO_PREFIX",
+    "wake-auto-prefix": "WAKE_WORD_AUTO_PREFIX",
+    "wake_word_auto_prefix": "WAKE_WORD_AUTO_PREFIX",
+    "WAKE_WORD_AUTO_PREFIX": "WAKE_WORD_AUTO_PREFIX",
 }
 
 
@@ -231,6 +250,9 @@ def get_current_config() -> Dict[str, Any]:
         "voice_hotkey": getattr(settings, "voice_hotkey", "auto"),
         "auto_endpoint": settings.voice_auto_endpoint,
         "hotkey_enabled": settings.enable_voice_hotkey,
+        "enable_wake_word": settings.enable_wake_word,
+        "wake_words": settings.wake_words,
+        "wake_word_auto_prefix": settings.wake_word_auto_prefix,
         "env_file": str(get_active_env_file()),
     }
 
@@ -266,6 +288,12 @@ def save_config(updates: Dict[str, str], notify_daemon: bool = True) -> Tuple[bo
             settings.voice_auto_endpoint = v.lower() in ("true", "1", "yes")
         elif k == "ENABLE_VOICE_HOTKEY":
             settings.enable_voice_hotkey = v.lower() in ("true", "1", "yes")
+        elif k == "ENABLE_WAKE_WORD":
+            settings.enable_wake_word = v.lower() in ("true", "1", "yes")
+        elif k == "VOICE_WAKE_WORDS":
+            settings.wake_words = v
+        elif k == "WAKE_WORD_AUTO_PREFIX":
+            settings.wake_word_auto_prefix = v.lower() in ("true", "1", "yes")
 
     # 2. Write to ~/.maxi/.env
     GLOBAL_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)

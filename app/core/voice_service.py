@@ -1,10 +1,14 @@
 """
-Maxi Integrated Voice Push-to-Talk Service
-Runs as an embedded background listener inside the Maxi daemon.
-Trigger: Hold [Control + Space], speak, release.
-Audio STT: Transcribes audio via Voice endpoint (Groq Whisper-Turbo), then hands
-the transcript directly to the Main Agent.
-Web HUD: Broadcasts real-time voice events to connected clients over WebSockets.
+Maxi Integrated Voice Push-to-Talk & Wake Word Auto-Catch Service
+Runs as an embedded background voice engine inside the Maxi daemon.
+
+Capabilities:
+1. Hands-Free Wake Word Auto-Catch:
+   Continuously listens for "Hey Maxi" or "Hey Siri".
+   When detected, prefixes the command with "Hey Maxi," and activates the agent function.
+2. Hardware Push-to-Talk:
+   Hold Right Option (macOS) or Control + Space (Windows/Linux) to speak, release to execute.
+3. Tactile 3-chime audio pipeline and real-time WebSocket HUD broadcasting.
 """
 
 import io
@@ -12,13 +16,15 @@ import os
 import sys
 import time
 import wave
+import queue
 import asyncio
 import logging
 import threading
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Deque
+from collections import deque
 
 try:
     import numpy as np
@@ -38,6 +44,7 @@ except Exception:
 import httpx
 
 from app.config import settings
+from app.core.wake_word import parse_wake_word, format_prefixed_prompt
 
 logger = logging.getLogger("maxi.voice")
 
@@ -80,7 +87,11 @@ def play_sound(sound_name: str):
         for player in ("paplay", "pw-play", "aplay", "canberra-gtk-play", "ffplay"):
             if shutil.which(player):
                 if player == "ffplay":
-                    subprocess.Popen([player, "-nodisp", "-autoexit", "-loglevel", "quiet", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.Popen(
+                        [player, "-nodisp", "-autoexit", "-loglevel", "quiet", str(resolved)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
                 else:
                     subprocess.Popen([player, str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 break
@@ -94,7 +105,7 @@ def play_sound(sound_name: str):
                 alias = f"maxi_{abs(hash(str(resolved))) % 100000}"
                 winmm = ctypes.windll.winmm
                 winmm.mciSendStringW(f'open "{resolved}" type mpegvideo alias {alias}', None, 0, None)
-                winmm.mciSendStringW(f'play {alias} from 0', None, 0, None)
+                winmm.mciSendStringW(f"play {alias} from 0", None, 0, None)
         except Exception:
             pass
 
@@ -102,7 +113,7 @@ def play_sound(sound_name: str):
 def show_notification(title: str, message: str, subtitle: str = ""):
     """Display native notification banner."""
     if sys.platform == "darwin":
-        clean_msg = message.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
+        clean_msg = message.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
         clean_title = title.replace('"', '\\"')
         clean_sub = subtitle.replace('"', '\\"') if subtitle else ""
         sub_clause = f'subtitle "{clean_sub}"' if clean_sub else ""
@@ -114,29 +125,49 @@ def show_notification(title: str, message: str, subtitle: str = ""):
         logger.info(f"[{title}] {message} ({subtitle})")
 
 
-class VoiceHotkeyService:
-    """Global Push-to-Talk voice capture listener (Hold to speak, release to execute)."""
+class MaxiVoiceService:
+    """
+    Unified Voice Service combining:
+    1. Background Hands-Free Wake Word Auto-Catch ("Hey Maxi" / "Hey Siri")
+    2. Global Push-to-Talk Hotkey (Right Option / Control + Space)
+    """
 
     def __init__(self):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._listener: Optional[keyboard.Listener] = None
         self._stream: Optional[sd.InputStream] = None
+        self._running = False
 
-        # Platform & hotkey state
+        # Platform detection
         self.is_mac = sys.platform == "darwin"
+
+        # Hotkey state
         self.ctrl_pressed = False
         self.space_pressed = False
         self.right_option_pressed = False
-        self.is_recording = False
-        self.press_time = 0.0
-
-        self.audio_buffer: List[np.ndarray] = []
-        self.last_interim_transcript: str = ""
-        self.speech_detected = False
-        self.last_speech_time = 0.0
         self.last_key_press_time = 0.0
         self.last_key_release_time = 0.0
+
+        # Push-to-Talk recording state
+        self.is_ptt_recording = False
+        self.ptt_press_time = 0.0
+        self.ptt_audio_buffer: List[np.ndarray] = []
+        self.last_interim_transcript: str = ""
+
+        # Wake Word audio queue and state
+        self._wake_audio_queue: queue.Queue = queue.Queue(maxsize=200)
+        self._wake_worker_thread: Optional[threading.Thread] = None
+        self._wake_pending_command: bool = False
+        self._wake_pending_time: float = 0.0
+
+        # Concurrency & dispatch state
+        self._is_dispatching: bool = False
         self.lock = threading.RLock()
+
+    @property
+    def is_recording(self) -> bool:
+        """Compatibility property for legacy HUD queries."""
+        return self.is_ptt_recording
 
     def _broadcast(self, msg: dict):
         """Broadcasts voice state event to active WebSocket connections."""
@@ -147,8 +178,12 @@ class VoiceHotkeyService:
         except Exception as e:
             logger.debug(f"Could not broadcast voice event: {e}")
 
+    # =========================================================================
+    # Keyboard Hotkey Identification
+    # =========================================================================
+
     def _is_mac_right_option(self, key) -> bool:
-        """Identifies Mac Right Option key via Key.alt_r, alt_gr, virtual keycode, or string representation."""
+        """Identifies Mac Right Option key via Key.alt_r, alt_gr, virtual keycode, or string."""
         if key in (keyboard.Key.alt_r, getattr(keyboard.Key, "alt_gr", None)):
             return True
         if hasattr(key, "name") and key.name in ("alt_r", "option_r", "alt_gr"):
@@ -196,130 +231,214 @@ class VoiceHotkeyService:
             return True
         return False
 
+    # =========================================================================
+    # Audio Capture & Callback
+    # =========================================================================
+
     def _audio_callback(self, indata, frames, time_info, status):
-        if self.is_recording and np is not None:
-            self.audio_buffer.append(indata.copy())
-            rms = float(np.sqrt(np.mean(indata**2)))
-            if rms >= settings.voice_silence_threshold:
-                self.speech_detected = True
-                self.last_speech_time = time.time()
+        """Unified audio capture callback feeding both PTT and Wake Word queues."""
+        if status:
+            logger.debug(f"Audio stream status: {status}")
+        if np is None:
+            return
+
+        chunk = indata.copy()
+
+        # 1. Active Push-to-Talk takes priority
+        if self.is_ptt_recording:
+            with self.lock:
+                self.ptt_audio_buffer.append(chunk)
+            return
+
+        # 2. Feed Wake Word Auto-Catch queue if enabled and not currently dispatching
+        if settings.enable_wake_word and not self._is_dispatching:
+            try:
+                self._wake_audio_queue.put_nowait(chunk)
+            except queue.Full:
+                try:
+                    # Drop oldest frame to keep live buffer fresh
+                    self._wake_audio_queue.get_nowait()
+                    self._wake_audio_queue.put_nowait(chunk)
+                except Exception:
+                    pass
+
+    # =========================================================================
+    # Hands-Free Wake Word Auto-Catch Worker
+    # =========================================================================
+
+    def _wake_word_worker(self):
+        """
+        Background worker that continuously monitors microphone audio energy (RMS).
+        Detects voice utterances, transcribes speech, and auto-catches "Hey Maxi" / "Hey Siri".
+        """
+        pre_roll: Deque[np.ndarray] = deque(maxlen=6)  # ~0.4s pre-speech buffer
+        speech_chunks: List[np.ndarray] = []
+        in_speech = False
+        last_speech_time = 0.0
+        speech_start_time = 0.0
+
+        silence_threshold = getattr(settings, "wake_word_energy_threshold", 0.015)
+        silence_duration = getattr(settings, "wake_word_silence_duration", 1.0)
+
+        while self._running:
+            try:
+                chunk = self._wake_audio_queue.get(timeout=0.2)
+            except queue.Empty:
+                # Check for two-stage wake command timeout (e.g. User said "Hey Maxi" then stayed silent for >6s)
+                if self._wake_pending_command and (time.time() - self._wake_pending_time > 6.0):
+                    logger.debug("⏱️ Two-stage wake timeout expired without follow-up command.")
+                    self._wake_pending_command = False
+                    self._broadcast({"event": "voice_stop"})
+                continue
+
+            if self.is_ptt_recording or self._is_dispatching:
+                pre_roll.clear()
+                speech_chunks.clear()
+                in_speech = False
+                continue
+
+            rms = float(np.sqrt(np.mean(chunk**2))) if np is not None else 0.0
+            now = time.time()
+
+            # State A: Listening for speech onset
+            if not in_speech:
+                pre_roll.append(chunk)
+                if rms >= silence_threshold:
+                    in_speech = True
+                    speech_start_time = now
+                    last_speech_time = now
+                    speech_chunks = list(pre_roll)
+                    pre_roll.clear()
+            # State B: Gathering utterance
+            else:
+                speech_chunks.append(chunk)
+                if rms >= silence_threshold:
+                    last_speech_time = now
+
+                silence_gap = now - last_speech_time
+                total_duration = now - speech_start_time
+
+                # Utterance complete when silence gap met or safety max cap (12s) reached
+                if silence_gap >= silence_duration or total_duration >= 12.0:
+                    in_speech = False
+                    chunks_to_process = list(speech_chunks)
+                    speech_chunks.clear()
+                    pre_roll.clear()
+
+                    if chunks_to_process:
+                        threading.Thread(
+                            target=self._process_wake_utterance,
+                            args=(chunks_to_process,),
+                            daemon=True,
+                        ).start()
+
+    def _process_wake_utterance(self, chunks: List[np.ndarray]):
+        """Transcribes captured utterance and triggers agent execution if wake word matches."""
+        if not chunks or np is None:
+            return
+
+        audio_data = np.concatenate(chunks, axis=0)
+        # Filter out transient clicks / bumps (< 350ms)
+        if len(audio_data) < SAMPLE_RATE * 0.35:
+            return
+
+        transcript = self._transcribe(audio_data)
+        if not transcript or transcript.strip() in (".", "...", "!", "?"):
+            return
+
+        logger.debug(f"🎙️ Ambient Speech Utterance: \"{transcript}\"")
+
+        # Case 1: Waiting for command after previous "Hey Maxi" wake trigger
+        if self._wake_pending_command:
+            self._wake_pending_command = False
+            logger.info(f"🗣️ Follow-Up Voice Command: \"{transcript}\"")
+
+            prefixed_prompt = (
+                format_prefixed_prompt(transcript)
+                if settings.wake_word_auto_prefix
+                else transcript
+            )
+            self._dispatch_command(prefixed_prompt, source="voice:wake_word", trigger_transcript=transcript)
+            return
+
+        # Case 2: Standard wake word detection in utterance
+        parsed = parse_wake_word(transcript, settings.get_wake_words_list())
+        if not parsed:
+            # Utterance did not contain authorized wake word; silently discard
+            logger.debug(f"Non-wake speech discarded: \"{transcript}\"")
+            return
+
+        matched_wake_word, command = parsed
+        logger.info(f"⚡ Wake Word Auto-Catch: '{matched_wake_word}' detected in \"{transcript}\"")
+
+        # Audible tactile feedback immediately upon catching wake word
+        play_sound(settings.voice_start_sound)
+        self._broadcast({
+            "event": "wake_word_detected",
+            "wake_word": matched_wake_word,
+            "transcript": transcript,
+        })
+        self._broadcast({"event": "voice_start"})
+
+        # Subcase 2A: Utterance already contained the command (e.g. "Hey Maxi, open Safari")
+        if command and len(command.strip()) > 1:
+            prefixed_prompt = (
+                format_prefixed_prompt(command)
+                if settings.wake_word_auto_prefix
+                else f"Hey Maxi, {command.strip()}"
+            )
+            self._dispatch_command(prefixed_prompt, source="voice:wake_word", trigger_transcript=transcript)
+        # Subcase 2B: User spoke only the wake word (e.g. "Hey Maxi") -> wait for command
+        else:
+            logger.info("🎙️ Wake word detected without immediate command. Listening for command...")
+            self._wake_pending_command = True
+            self._wake_pending_time = time.time()
+            show_notification(
+                title="Maxi Voice 🎙️",
+                message="Listening for your command...",
+                subtitle="Say your command now"
+            )
+
+    # =========================================================================
+    # Push-to-Talk Recording Controls
+    # =========================================================================
 
     def start_recording(self):
+        """Starts Push-to-Talk audio gathering."""
         with self.lock:
-            if self.is_recording:
+            if self.is_ptt_recording:
                 return
-            if sd is None:
-                logger.warning("Microphone recording unavailable (sounddevice not installed or no audio backend).")
-                return
-            self.is_recording = True
-            self.audio_buffer = []
-            self.speech_detected = False
-            self.last_speech_time = time.time()
-            self.press_time = time.time()
+            self.is_ptt_recording = True
+            self.ptt_audio_buffer = []
+            self.ptt_press_time = time.time()
+
+            # Suspend two-stage wake if hotkey pressed
+            self._wake_pending_command = False
 
             play_sound(settings.voice_start_sound)
             self._broadcast({"event": "voice_start"})
-            logger.info("🎙️ Voice recording started (Hold key to speak)...")
-
-            try:
-                self._stream = sd.InputStream(
-                    samplerate=SAMPLE_RATE,
-                    channels=CHANNELS,
-                    dtype="float32",
-                    callback=self._audio_callback
-                )
-                self._stream.start()
-                threading.Thread(target=self._stream_transcription_worker, daemon=True).start()
-            except Exception as e:
-                logger.error(f"Failed to open microphone audio stream: {e}")
-                self.is_recording = False
-                self._broadcast({"event": "voice_stop"})
-
-    def _stream_transcription_worker(self):
-        """Streams interim transcripts while key is held; enforces generous safety cap."""
-        last_text = ""
-        time.sleep(0.4)
-        while self.is_recording:
-            now = time.time()
-
-            # Runaway safety timeout (60s) in case key-up event was lost by OS
-            if (now - self.press_time) > 60.0:
-                logger.warning("⏱️ Maximum recording duration (60s) reached safety cutoff.")
-                self.stop_recording()
-                break
-
-            # Optional auto-endpointing ONLY if user explicitly enabled it
-            if settings.voice_auto_endpoint and self.speech_detected:
-                silence_elapsed = now - self.last_speech_time
-                if (now - self.press_time) > 1.2 and silence_elapsed >= settings.voice_silence_duration:
-                    logger.info(f"⏱️ Voice silence detected ({silence_elapsed:.2f}s). Auto-endpointing...")
-                    self.stop_recording()
-                    break
-
-            # Live interim transcription for frontend HUD (non-blocking)
-            chunks = []
-            with self.lock:
-                if not self.is_recording:
-                    break
-                if len(self.audio_buffer) >= 6:
-                    chunks = list(self.audio_buffer)
-
-            if chunks:
-                audio_data = np.concatenate(chunks, axis=0)
-                if len(audio_data) >= SAMPLE_RATE * 0.8:
-                    interim = self._transcribe(audio_data)
-                    clean = interim.strip()
-                    if clean and clean != last_text and clean not in (".", "...", "!", "?"):
-                        last_text = clean
-                        self.speech_detected = True
-                        self.last_interim_transcript = clean
-                        logger.info(f"🗣️ Live Voice Stream: \"{clean}\"")
-                        self._broadcast({
-                            "event": "voice_interim_transcript",
-                            "transcript": clean
-                        })
-
-            time.sleep(0.4)
+            logger.info("🎙️ Push-to-Talk recording started (Hold key to speak)...")
 
     def cancel_recording(self):
-        """Silently cancels recording without processing or playing finish chimes."""
-        stream_to_stop = None
+        """Silently cancels Push-to-Talk without processing or playing finish chimes."""
         with self.lock:
-            if not self.is_recording:
+            if not self.is_ptt_recording:
                 return
-            self.is_recording = False
-            self.audio_buffer = []
-            stream_to_stop = self._stream
-            self._stream = None
-
-        if stream_to_stop:
-            try:
-                stream_to_stop.stop()
-                stream_to_stop.close()
-            except Exception as e:
-                logger.debug(f"Audio stream close error: {e}")
+            self.is_ptt_recording = False
+            self.ptt_audio_buffer = []
 
         self._broadcast({"event": "voice_stop"})
         logger.debug("Voice recording cancelled (brief tap or abort).")
 
     def stop_recording(self):
-        stream_to_stop = None
+        """Stops Push-to-Talk gathering and initiates execution."""
         chunks = []
         with self.lock:
-            if not self.is_recording:
+            if not self.is_ptt_recording:
                 return
-            self.is_recording = False
-            stream_to_stop = self._stream
-            self._stream = None
-            chunks = list(self.audio_buffer)
-            self.audio_buffer = []
-
-        if stream_to_stop:
-            try:
-                stream_to_stop.stop()
-                stream_to_stop.close()
-            except Exception as e:
-                logger.debug(f"Audio stream close error: {e}")
+            self.is_ptt_recording = False
+            chunks = list(self.ptt_audio_buffer)
+            self.ptt_audio_buffer = []
 
         play_sound(settings.voice_release_sound)
         self._broadcast({"event": "voice_stop"})
@@ -327,10 +446,41 @@ class VoiceHotkeyService:
         if not chunks:
             return
 
-        threading.Thread(target=self._process_recording, args=(chunks,), daemon=True).start()
+        threading.Thread(target=self._process_ptt_recording, args=(chunks,), daemon=True).start()
+
+    def _process_ptt_recording(self, chunks: List[np.ndarray]):
+        if not chunks or np is None:
+            return
+
+        audio_data = np.concatenate(chunks, axis=0)
+        if len(audio_data) < SAMPLE_RATE * 0.28:
+            logger.debug("Audio input too brief (<280ms). Ignored.")
+            return
+
+        t0 = time.perf_counter()
+        transcript = self._transcribe(audio_data)
+        if not transcript or transcript in (".", "...", "!", "?"):
+            logger.info("No recognizable speech detected.")
+            return
+
+        stt_ms = round((time.perf_counter() - t0) * 1000, 1)
+        logger.info(f"🗣️ Push-to-Talk Transcript ({stt_ms}ms): \"{transcript}\"")
+
+        # Format prompt with 'Hey Maxi,' prefix if enabled
+        prefixed_prompt = (
+            format_prefixed_prompt(transcript)
+            if settings.wake_word_auto_prefix
+            else transcript
+        )
+
+        self._dispatch_command(prefixed_prompt, source="voice:hotkey", trigger_transcript=transcript)
+
+    # =========================================================================
+    # STT Transcription & Agent Execution
+    # =========================================================================
 
     def _transcribe(self, audio_data: np.ndarray) -> str:
-        """Sends captured audio to Voice/Groq Whisper endpoint."""
+        """Sends captured audio to Voice STT (Groq Whisper-Turbo / OpenAI STT endpoint)."""
         api_key = settings.get_voice_api_key()
         if not api_key:
             logger.error("No VOICE_API_KEY or GROQ_API_KEY configured for speech transcription.")
@@ -351,7 +501,7 @@ class VoiceHotkeyService:
         data = {
             "model": settings.voice_model,
             "response_format": "json",
-            "prompt": "Computer assistant voice command."
+            "prompt": "Computer assistant voice command: Hey Maxi, Hey Siri.",
         }
 
         try:
@@ -364,83 +514,73 @@ class VoiceHotkeyService:
             logger.error(f"Error calling voice transcription endpoint: {e}")
         return ""
 
-    def _process_recording(self, chunks: List[np.ndarray]):
-        audio_data = np.concatenate(chunks, axis=0)
-        # Filter out short taps (< 300 ms)
-        if len(audio_data) < SAMPLE_RATE * 0.3:
-            logger.debug("Audio input too brief (<300ms). Ignored.")
-            return
-
-        t0 = time.perf_counter()
-        transcript = self._transcribe(audio_data)
-        if not transcript or transcript in (".", "...", "!", "?"):
-            transcript = self.last_interim_transcript
-        if not transcript or transcript in (".", "...", "!", "?"):
-            logger.info("No recognizable speech detected.")
-            return
-
-        stt_ms = round((time.perf_counter() - t0) * 1000, 1)
-        logger.info(f"🗣️ Voice Transcript ({stt_ms}ms): \"{transcript}\"")
-
-        # Hand directly to Main Agent
+    def _dispatch_command(self, prompt: str, source: str = "voice:wake_word", trigger_transcript: str = ""):
+        """Dispatches formatted voice prompt to the main Maxi agent."""
         from app.core.agent import agent
+
+        self._is_dispatching = True
+        t0 = time.perf_counter()
         agent_output = ""
         tools_used = []
+
+        logger.info(f"⚡ Activating Maxi Agent Function with prompt: \"{prompt}\" (source: {source})")
 
         try:
             if self._loop and self._loop.is_running():
                 future = asyncio.run_coroutine_threadsafe(
-                    agent.run(prompt=transcript, source="voice:hotkey"),
-                    self._loop
+                    agent.run(prompt=prompt, source=source),
+                    self._loop,
                 )
-                result = future.result(timeout=30)
+                result = future.result(timeout=35)
                 agent_output = result.get("output", "")
                 tools_used = result.get("tools_used", [])
             else:
-                # Fallback if loop reference not active
-                result = asyncio.run(agent.run(prompt=transcript, source="voice:hotkey"))
+                result = asyncio.run(agent.run(prompt=prompt, source=source))
                 agent_output = result.get("output", "")
                 tools_used = result.get("tools_used", [])
         except Exception as e:
             logger.error(f"Error dispatching voice command to main agent: {e}")
             agent_output = f"Execution error: {str(e)}"
+        finally:
+            self._is_dispatching = False
 
         total_ms = round((time.perf_counter() - t0) * 1000, 1)
         logger.info(f"⚡ Maxi Voice Result ({total_ms}ms): {agent_output}")
         if tools_used:
-            logger.info(f"🛠️  Tools executed: {', '.join(tools_used)}")
+            logger.info(f"🛠️ Tools executed: {', '.join(tools_used)}")
 
         # Broadcast result to frontend HUD
         self._broadcast({
             "event": "voice_result",
-            "transcript": transcript,
+            "transcript": prompt,
             "output": agent_output,
-            "tools": tools_used
+            "tools": tools_used,
         })
 
-        # Play completion chime AFTER result is ready
+        # Play completion chime
         play_sound(settings.voice_finish_sound)
 
-        # Native macOS notification banner (full text)
+        # Native desktop notification banner
         show_notification(
             title="Maxi Voice 🎙️",
             message=agent_output or "Command executed.",
-            subtitle=transcript
+            subtitle=prompt,
         )
 
+    # =========================================================================
+    # Keyboard Event Handlers
+    # =========================================================================
+
     def _on_press(self, key):
-        # 1. Update Right Option state if permitted
         if self._is_hotkey_pref_right_option() and self._is_mac_right_option(key):
             self.right_option_pressed = True
 
-        # 2. Update Control + Space state if permitted
         if self._is_hotkey_pref_ctrl_space():
             if self._is_ctrl(key):
                 self.ctrl_pressed = True
             elif self._is_space(key):
                 self.space_pressed = True
 
-        # 3. Check if active combo is pressed
         if self._is_hotkey_active():
             now = time.time()
             if now - self.last_key_press_time < 0.12:
@@ -448,26 +588,22 @@ class VoiceHotkeyService:
             self.last_key_press_time = now
 
             with self.lock:
-                if not self.is_recording:
-                    self.press_time = now
-                    logger.info("🔑 Voice hotkey pressed. Hold to speak...")
+                if not self.is_ptt_recording:
+                    self.ptt_press_time = now
                     self.start_recording()
 
     def _on_release(self, key):
-        was_recording = self.is_recording
+        was_recording = self.is_ptt_recording
 
-        # 1. Update Right Option state
         if self._is_hotkey_pref_right_option() and self._is_mac_right_option(key):
             self.right_option_pressed = False
 
-        # 2. Update Control + Space state
         if self._is_hotkey_pref_ctrl_space():
             if self._is_ctrl(key):
                 self.ctrl_pressed = False
             elif self._is_space(key):
                 self.space_pressed = False
 
-        # 3. Handle Push-to-Talk release when active combo is released
         if was_recording and not self._is_hotkey_active():
             now = time.time()
             if now - self.last_key_release_time < 0.10:
@@ -475,48 +611,86 @@ class VoiceHotkeyService:
             self.last_key_release_time = now
 
             with self.lock:
-                if not self.is_recording:
+                if not self.is_ptt_recording:
                     return
-                elapsed = time.time() - self.press_time
+                elapsed = time.time() - self.ptt_press_time
                 if elapsed < 0.25:
-                    # Accidental brush or tap while typing (<250ms) -> cancel silently
                     logger.debug(f"⏱️ Hotkey released too quickly ({elapsed:.2f}s). Cancelling.")
                     self.cancel_recording()
                 else:
                     logger.info(f"🎙️ Hotkey released ({elapsed:.2f}s). Processing speech...")
                     self.stop_recording()
 
+    # =========================================================================
+    # Service Lifecycle Management
+    # =========================================================================
+
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None):
-        """Starts the global Push-to-Talk voice listener thread."""
-        if not settings.enable_voice_hotkey:
-            logger.info("Voice push-to-talk hotkey is disabled (ENABLE_VOICE_HOTKEY=False).")
-            return
-
-        if keyboard is None:
-            logger.info("ℹ️ pynput keyboard listener is unavailable. Text/chat mode is fully active.")
-            return
-
+        """Starts the unified Push-to-Talk hotkey listener and Wake Word auto-catch stream."""
         self._loop = loop
-        hotkey_name = "Right Option (⌥)" if self._is_hotkey_pref_right_option() else "Control + Space"
-        logger.info(f"Initializing global {hotkey_name} Push-to-Talk voice listener...")
+        self._running = True
 
-        try:
-            self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
-            self._listener.daemon = True
-            self._listener.start()
-            logger.info(f"✅ Voice hotkey active: Hold {hotkey_name} to speak, release to execute.")
-        except Exception as e:
-            logger.warning(f"Voice hotkey listener could not start ({e}). Text/chat mode is fully active.")
+        # 1. Start continuous audio stream if sounddevice is available
+        if sd is not None:
+            try:
+                self._stream = sd.InputStream(
+                    samplerate=SAMPLE_RATE,
+                    channels=CHANNELS,
+                    dtype="float32",
+                    callback=self._audio_callback,
+                )
+                self._stream.start()
+
+                # Start Wake Word Auto-Catch background worker
+                if settings.enable_wake_word:
+                    self._wake_worker_thread = threading.Thread(
+                        target=self._wake_word_worker,
+                        daemon=True,
+                    )
+                    self._wake_worker_thread.start()
+                    logger.info(
+                        f"✅ Hands-Free Wake Word Auto-Catch active: "
+                        f"Say {', '.join(settings.get_wake_words_list())} to trigger."
+                    )
+                    if settings.wake_word_auto_prefix:
+                        logger.info("   Commands are automatically prefixed with 'Hey Maxi,' upon activation.")
+            except Exception as e:
+                logger.warning(f"Could not open microphone audio stream: {e}. Voice capture disabled.")
+        else:
+            logger.info("ℹ️ sounddevice audio backend unavailable. Voice capture disabled.")
+
+        # 2. Start global Push-to-Talk hotkey listener
+        if settings.enable_voice_hotkey and keyboard is not None:
+            hotkey_name = "Right Option (⌥)" if self._is_hotkey_pref_right_option() else "Control + Space"
+            try:
+                self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+                self._listener.daemon = True
+                self._listener.start()
+                logger.info(f"✅ Push-to-Talk hotkey active: Hold {hotkey_name} to speak, release to execute.")
+            except Exception as e:
+                logger.warning(f"Voice hotkey listener could not start ({e}).")
 
     def stop(self):
-        """Stops the hotkey listener and audio capture."""
+        """Gracefully stops all audio streams, listeners, and worker threads."""
+        self._running = False
+        self._wake_pending_command = False
+
         if self._listener:
             try:
                 self._listener.stop()
             except Exception:
                 pass
             self._listener = None
-        logger.info("Voice Push-to-Talk listener stopped.")
+
+        if self._stream:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
+        logger.info("Maxi Voice & Wake Word service stopped.")
 
 
-voice_service = VoiceHotkeyService()
+voice_service = MaxiVoiceService()
