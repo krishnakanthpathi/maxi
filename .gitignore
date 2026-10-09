@@ -39,3 +39,10 @@ env/
 # Operating System
 .DS_Store
 Thumbs.db
+
+# Swift & macOS build artifacts
+.build/
+*.xcodeproj
+*.xcworkspace
+frontends/macos/dist/
+

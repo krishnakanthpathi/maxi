@@ -1,27 +1,61 @@
 # Maxi macOS Native Frontend 🍏
 
-Native Apple macOS frontend implementation guide and client architecture.
+Native Apple macOS Siri-style floating HUD and Menu Bar assistant built in Swift and SwiftUI.
 
-## Architecture
+---
 
-The macOS frontend is designed as a lightweight Swift/SwiftUI application that docks in the menu bar and displays a floating translucent HUD panel over all spaces when triggered.
+## ⚡ Features
 
-### 1. Connection
-- **Base REST URL**: `http://localhost:4848/api`
-- **WebSocket Event Stream**: `ws://localhost:4848/ws`
+- **Floating Glass HUD (`NSPanel`)**:
+  - Pinned on level `.floating` across **all Mission Control Spaces** (`.canJoinAllSpaces`).
+  - Native Apple frosted glass (`.ultraThinMaterial`) with specular hairline borders.
+  - Non-activating HUD (`.nonactivatingPanel`): Never steals keyboard focus from your active code editor or browser.
+  - Smooth spring transitions and auto-dismiss after 6 seconds of inactivity.
+  - Global `ESC` key dismiss.
+- **Bioluminescent Siri Acoustic Orb**:
+  - Reactive multi-layer angular and radial plasma gradients.
+  - **Idle**: Soft cyan ambient breathing glow.
+  - **Listening (Right Option ⌥)**: Expands into vibrant acoustic ripples (hot pink -> electric cyan -> amber) synchronized with speech.
+  - **Thinking / Processing**: Swirling revolving luminous rings while Ollama generates.
+  - **Responding**: Synchronized pulsing glow with real-time token streaming.
+- **Menu Bar Companion (`NSStatusItem`)**:
+  - Minimalist Lightning Crest (`⚡`) in macOS status bar.
+  - Live status indicator (Daemon connection state, active MCP tools count, Ollama model).
+  - Quick actions: Toggle HUD, audition sound chimes, open Web Workstation, restart daemon.
+- **WebSocket Event Bridge (`ws://127.0.0.1:4848/ws`)**:
+  - Real-time bi-directional synchronization with the background Python daemon.
+  - Supports both push-to-talk voice commands and instant typed commands.
 
-### 2. Global Hotkey & Activation
-- By default, the Maxi daemon captures **Right Option** globally.
-- The Swift app can optionally monitor the WebSocket events:
-  - `voice_start`: Expand the floating Siri-style dynamic orb.
-  - `voice_interim_transcript`: Update live subtitle text with streaming words while the user speaks.
-  - `voice_locked`: Show lock icon indicator (hands-free mode).
-  - `voice_stop`: Transition orb to thinking/processing state.
-  - `voice_result`: Display final response card and tool execution badges.
-  - `stream_token`: Live character-by-character typing animation.
+---
 
-### 3. REST Control Endpoints
-- `POST /api/prompt` -> `{"text": "...", "source": "macos:menubar"}`
-- `GET /api/sounds` -> Lists available sound themes (`minimal`, `glass`, `soft`, `scifi`, `zen`, `synth`)
-- `POST /api/sounds/set` -> `{"start_sound": "minimal_wake", "finish_sound": "minimal_complete"}`
-- `GET /api/mcp/tools` -> Live list of loaded MCP workstation tools
+## 🚀 Quick Start
+
+### 1. Launch the App
+To start the native macOS app immediately:
+```bash
+open "frontends/macos/dist/Maxi.app"
+```
+Or directly run the compiled binary:
+```bash
+./frontends/macos/dist/Maxi.app/Contents/MacOS/MaxiHUD
+```
+
+### 2. Global Hotkey Activation
+- Hold **Right Option (`⌥`)** anywhere on macOS to speak.
+- The Siri HUD will instantly glide in, listen to your command, and execute workstation tools.
+- Release **Right Option (`⌥`)** to finish and stream the response.
+- Press **`ESC`** or click outside to dismiss.
+
+---
+
+## 🛠️ Build & Package from Source
+
+Requires macOS 13+ (Ventura, Sonoma, Sequoia, Tahoe) and Swift 5.9+:
+
+```bash
+# Compile and build the native app bundle
+./frontends/macos/scripts/build_app.sh
+```
+
+The output bundle is generated at:
+`frontends/macos/dist/Maxi.app`
