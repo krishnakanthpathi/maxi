@@ -116,6 +116,13 @@ def cmd_stop(args):
         PID_FILE.unlink(missing_ok=True)
 
 
+def cmd_restart(args):
+    """Restart background daemon."""
+    cmd_stop(args)
+    time.sleep(1.0)
+    cmd_start(args)
+
+
 def cmd_status(args):
     """Check status of Maxi daemon and active tools."""
     pid = get_pid()
@@ -294,6 +301,7 @@ def cmd_config(args):
             "VOICE_BASE_URL": cfg["voice_url"],
             "VOICE_API_KEY": cfg["voice_key"],
             "VOICE_MODEL": cfg["voice_model"],
+            "VOICE_HOTKEY": cfg.get("voice_hotkey", "auto"),
             "VOICE_AUTO_ENDPOINT": cfg["auto_endpoint"],
             "ENABLE_VOICE_HOTKEY": cfg["hotkey_enabled"],
         }
@@ -367,9 +375,17 @@ def cmd_config(args):
     print(f"   Model:               {cfg['voice_model']}")
     print(f"   API Key:             {cfg['voice_key_masked']}")
     print("")
+    hotkey_pref = (cfg.get("voice_hotkey") or "auto").lower()
+    if hotkey_pref == "auto":
+        hotkey_name = "Right Option (⌥)" if sys.platform == "darwin" else "Control + Space"
+    elif hotkey_pref in ("right_option", "option_r", "alt_r", "option"):
+        hotkey_name = "Right Option (⌥)"
+    else:
+        hotkey_name = "Control + Space"
+
     print("⚙️ Audio & Interface:")
-    print(f"   Auto-Endpoint:       {'Enabled (800ms silence)' if cfg['auto_endpoint'] else 'Disabled'}")
-    print(f"   Global Hotkey:       {'Enabled' if cfg['hotkey_enabled'] else 'Disabled'}")
+    print(f"   Push-to-Talk Hotkey: {hotkey_name} ({'Active' if cfg['hotkey_enabled'] else 'Disabled'})")
+    print(f"   Auto-Endpoint:       {'Enabled' if cfg['auto_endpoint'] else 'Disabled (Hold to speak)'}")
     print(f"   Config File:         {cfg['env_file']}")
     print("━" * 58)
     print("Commands:")
@@ -399,6 +415,9 @@ def main():
 
     # stop
     subparsers.add_parser("stop", help="Stop background daemon")
+
+    # restart
+    subparsers.add_parser("restart", help="Restart background daemon")
 
     # status
     subparsers.add_parser("status", help="Check daemon and MCP health")
@@ -444,6 +463,8 @@ def main():
         cmd_start(args)
     elif args.command == "stop":
         cmd_stop(args)
+    elif args.command == "restart":
+        cmd_restart(args)
     elif args.command == "status":
         cmd_status(args)
     elif args.command == "hud":

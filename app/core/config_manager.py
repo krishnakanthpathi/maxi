@@ -102,6 +102,10 @@ KEY_ALIASES = {
     "VOICE_MODEL": "VOICE_MODEL",
 
     # Audio & hotkey toggles
+    "voice-hotkey": "VOICE_HOTKEY",
+    "voice_hotkey": "VOICE_HOTKEY",
+    "VOICE_HOTKEY": "VOICE_HOTKEY",
+
     "auto-endpoint": "VOICE_AUTO_ENDPOINT",
     "auto_endpoint": "VOICE_AUTO_ENDPOINT",
     "voice_auto_endpoint": "VOICE_AUTO_ENDPOINT",
@@ -187,7 +191,7 @@ def detect_llm_preset(url: str, model: str) -> str:
     url_lower = (url or "").lower()
     model_lower = (model or "").lower()
 
-    if "11434" in url_lower or "localhost" in url_lower and "llama" in model_lower:
+    if "11434" in url_lower or "ollama" in url_lower or ("localhost" in url_lower and ("gemma" in model_lower or "llama" in model_lower)):
         return "ollama"
     if "groq.com" in url_lower:
         return "groq"
@@ -224,6 +228,7 @@ def get_current_config() -> Dict[str, Any]:
         "voice_key_masked": mask_secret(settings.get_voice_api_key()),
         "voice_model": settings.voice_model,
         "voice_preset": voice_preset,
+        "voice_hotkey": getattr(settings, "voice_hotkey", "auto"),
         "auto_endpoint": settings.voice_auto_endpoint,
         "hotkey_enabled": settings.enable_voice_hotkey,
         "env_file": str(get_active_env_file()),

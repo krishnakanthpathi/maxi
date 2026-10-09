@@ -75,10 +75,15 @@ class Settings(BaseSettings):
         alias="VOICE_FINISH_SOUND",
         description="Sound played when voice command completes and result is returned (from app/sounds or macOS system)"
     )
+    voice_hotkey: str = Field(
+        default="auto",
+        alias="VOICE_HOTKEY",
+        description="Global voice hotkey trigger ('auto', 'right_option', or 'ctrl_space')"
+    )
     voice_auto_endpoint: bool = Field(
-        default=True,
+        default=False,
         alias="VOICE_AUTO_ENDPOINT",
-        description="Automatically detect end of speech silence (800ms) and execute without requiring a second tap"
+        description="Automatically detect end of speech silence. Set False for pure Push-to-Talk (Hold to speak)"
     )
     voice_silence_threshold: float = Field(
         default=0.012,
@@ -86,9 +91,9 @@ class Settings(BaseSettings):
         description="Audio RMS amplitude below which audio is treated as silence"
     )
     voice_silence_duration: float = Field(
-        default=0.8,
+        default=1.2,
         alias="VOICE_SILENCE_DURATION",
-        description="Silence duration in seconds before auto-stopping recording"
+        description="Silence duration in seconds before auto-stopping recording (if auto_endpoint enabled)"
     )
 
     def get_voice_api_key(self) -> str:

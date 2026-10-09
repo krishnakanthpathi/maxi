@@ -43,16 +43,17 @@ Control the background daemon from any terminal:
 
 ```bash
 maxi start                       # Start background daemon on http://127.0.0.1:4848
+maxi stop                        # Gracefully stop the background daemon
+maxi restart                     # Restart background daemon
 maxi status                      # Inspect daemon PID, health, loaded MCP tools, audio theme
 maxi hud                         # Open the modern web HUD in your default browser
 maxi config                      # View active LLM & Voice configuration
-maxi config preset ollama        # Switch to Ollama (Local Default on :11434 with llama3.2)
+maxi config preset ollama        # Switch to Ollama (Local Default on :11434 with gemma4:31b-cloud)
 maxi config preset groq          # Switch to Groq (Cloud ultra-fast LPU)
 maxi config set llm-url <url>    # Set custom OpenAI-compatible endpoint URL
 maxi config set llm-model <name> # Set model name
 maxi config set voice-key <key>  # Set Groq Whisper voice STT API key
 maxi config wizard               # Interactive terminal configuration wizard
-maxi stop                        # Gracefully stop the background daemon
 maxi run                         # Run in foreground (ideal for systemd or development)
 ```
 
@@ -61,17 +62,19 @@ maxi run                         # Run in foreground (ideal for systemd or devel
 ## 🎙️ Voice & Hotkey Features
 
 ### 1. Hardware Hotkeys
-- **macOS**: Tap or hold **Right Option** (with **Control + Space** as universal fallback).
+- **macOS**: Hold **Right Option (⌥)** (Dedicated modifier; ignores Ctrl+Space to eliminate IDE autocomplete collisions).
 - **Windows / Linux**: Hold **Control + Space**.
 
-### 2. Dual Interaction Modes
-- **Push-to-Talk (Hold)**: Hold the hotkey, speak your command, release to fire instantly.
-- **Hands-Free Streaming (Tap + Auto-VAD)**: Tap the hotkey once, speak your command, and stop. The built-in Voice Activity Detector (VAD) detects **800ms of silence**, automatically cuts audio, and executes without requiring a second tap.
+### 2. Pure Push-to-Talk (Hold to Speak)
+- **Hold to Speak**: Hold the hotkey down, speak your command naturally, and pause freely without being cut off.
+- **Instant Dispatch**: Releasing the key stops recording and sends your command to the agent immediately.
+- **Typing Protection**: Brief accidental key brushes (<250ms) are silently discarded without playing chimes or dispatching.
+- **No Mid-Sentence Cutoffs**: Auto-endpointing is disabled by default so background silence will never interrupt your sentence.
 
-### 3. Three-Chime Audio Pipeline
+### 3. Tactile Audio Pipeline
 Every spoken interaction provides tactile auditory feedback:
-1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins.
-2. **Release / Send Chime** (`minimal_notification`): Fires when key is released or silence is detected.
+1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins upon pressing the key.
+2. **Release / Send Chime** (`minimal_notification`): Fires when the key is released.
 3. **Completion Chime** (`minimal_complete`): Fires after tools execute and final response text is generated.
 
 Sound themes can be auditioned and switched via the Web HUD or API:
