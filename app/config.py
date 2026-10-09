@@ -30,9 +30,9 @@ class Settings(BaseSettings):
         description="API key for the endpoint"
     )
     openai_model: str = Field(
-        default="llama3.2",
+        default="gemma4:31b-cloud",
         alias="OPENAI_MODEL",
-        description="Target model identifier (e.g. llama3.2 in Ollama)"
+        description="Target model identifier (e.g. gemma4:31b-cloud in Ollama)"
     )
 
     # Voice Service Settings

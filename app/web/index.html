@@ -775,7 +775,7 @@
     window.selectLlmPreset = function(preset) {
       if (preset === 'ollama') {
         cfgLlmUrl.value = 'http://localhost:11434/v1';
-        cfgLlmModel.value = 'llama3.2';
+        cfgLlmModel.value = 'gemma4:31b-cloud';
         cfgLlmKey.value = 'ollama';
       } else if (preset === 'groq') {
         cfgLlmUrl.value = 'https://api.groq.com/openai/v1';

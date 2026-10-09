@@ -221,25 +221,39 @@ class VoiceHotkeyService:
     def _stream_transcription_worker(self):
         """Continuously streams interim transcripts while user speaks and handles silence VAD endpointing."""
         last_text = ""
+        last_transcript_time = time.time()
         time.sleep(0.3)
         while self.is_recording:
             now = time.time()
 
-            # 1. Silence VAD Endpointing (auto-stop when silence detected after speaking)
+            # 1. Transcript stability endpointing (user finished speaking a sentence and paused for 1.0s)
+            if last_text and settings.voice_auto_endpoint:
+                if (now - self.press_time) > 1.2 and (now - last_transcript_time) >= 1.0:
+                    logger.info(f"⏱️ Spoken command finalized (\"{last_text}\"). Auto-endpointing...")
+                    self.stop_recording()
+                    break
+
+            # 2. Silence VAD Endpointing (auto-stop when silence detected after speaking)
             if self.speech_detected and settings.voice_auto_endpoint:
                 silence_elapsed = now - self.last_speech_time
-                if (now - self.press_time) > 0.6 and silence_elapsed >= settings.voice_silence_duration:
+                if (now - self.press_time) > 0.8 and silence_elapsed >= settings.voice_silence_duration:
                     logger.info(f"⏱️ Voice silence detected ({silence_elapsed:.2f}s). Auto-endpointing...")
                     self.stop_recording()
                     break
 
-            # 2. Idle timeout (no speech for 6s)
+            # 3. Idle timeout (no speech for 6s)
             if not self.speech_detected and (now - self.press_time) > 6.0:
                 logger.info("⏱️ No speech detected within 6s timeout. Auto-canceling...")
                 self.stop_recording()
                 break
 
-            # 3. Interim transcription
+            # 4. Maximum utterance safety timeout (12s)
+            if (now - self.press_time) > 12.0:
+                logger.info("⏱️ Max recording duration (12s) reached. Auto-endpointing...")
+                self.stop_recording()
+                break
+
+            # 5. Interim transcription
             chunks = []
             with self.lock:
                 if not self.is_recording:
@@ -254,6 +268,8 @@ class VoiceHotkeyService:
                     clean = interim.strip()
                     if clean and clean != last_text and clean not in (".", "...", "!", "?"):
                         last_text = clean
+                        last_transcript_time = time.time()
+                        self.speech_detected = True
                         self.last_interim_transcript = clean
                         logger.info(f"🗣️ Live Voice Stream: \"{clean}\"")
                         self._broadcast({

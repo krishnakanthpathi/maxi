@@ -47,6 +47,17 @@ def cmd_run(args):
         PID_FILE.unlink(missing_ok=True)
 
 
+def get_python_exe() -> str:
+    """Finds the isolated virtual environment python interpreter."""
+    v1 = Path.home() / ".maxi" / "venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if v1.exists():
+        return str(v1)
+    v2 = Path(__file__).resolve().parent.parent / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if v2.exists():
+        return str(v2)
+    return sys.executable
+
+
 def cmd_start(args):
     """Start daemon in background process."""
     existing_pid = get_pid()
@@ -64,9 +75,10 @@ def cmd_start(args):
     else:
         kwargs["start_new_session"] = True
 
+    py_exe = get_python_exe()
     with open(log_file, "a") as log_out:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "app.cli", "run"],
+            [py_exe, "-m", "app.cli", "run"],
             stdout=log_out,
             stderr=log_out,
             **kwargs
