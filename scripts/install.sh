@@ -110,15 +110,21 @@ fi
 echo -e "📦 Setting up isolated environment at ${CYAN}${VENV_DIR}${RESET}..."
 if command -v uv >/dev/null 2>&1; then
     echo -e "⚡ Using uv for high-speed package management..."
-    uv venv --python "$PYTHON_BIN" "${VENV_DIR}"
+    uv venv --allow-existing --python "$PYTHON_BIN" "${VENV_DIR}"
     echo -e "🔧 Installing Maxi package..."
-    uv pip install -e "${SOURCE_PATH}${INSTALL_EXTRAS}" --python "${VENV_DIR}"
+    if ! uv pip install -e "${SOURCE_PATH}${INSTALL_EXTRAS}" --python "${VENV_DIR}"; then
+        echo -e "${YELLOW}⚠️ Voice extras failed to install. Installing core chat package...${RESET}"
+        uv pip install -e "${SOURCE_PATH}" --python "${VENV_DIR}"
+    fi
 else
     "$PYTHON_BIN" -m venv "${VENV_DIR}"
     VENV_PIP="${VENV_DIR}/bin/pip"
     "${VENV_PIP}" install --upgrade --quiet pip setuptools wheel
     echo -e "🔧 Installing Maxi package..."
-    "${VENV_PIP}" install --quiet -e "${SOURCE_PATH}${INSTALL_EXTRAS}"
+    if ! "${VENV_PIP}" install -e "${SOURCE_PATH}${INSTALL_EXTRAS}"; then
+        echo -e "${YELLOW}⚠️ Voice extras failed to install. Installing core chat package...${RESET}"
+        "${VENV_PIP}" install -e "${SOURCE_PATH}"
+    fi
 fi
 
 VENV_MAXI="${VENV_DIR}/bin/maxi"
@@ -128,6 +134,20 @@ BIN_DIR="${HOME}/.local/bin"
 mkdir -p "${BIN_DIR}"
 ln -sf "${VENV_MAXI}" "${BIN_DIR}/maxi"
 echo -e "🔗 Linked CLI to ${GREEN}${BIN_DIR}/maxi${RESET}"
+
+# Also attempt system-wide link if writable or passwordless sudo
+if [ -w "/usr/local/bin" ]; then
+    ln -sf "${VENV_MAXI}" "/usr/local/bin/maxi" 2>/dev/null || true
+elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo ln -sf "${VENV_MAXI}" /usr/local/bin/maxi 2>/dev/null || true
+fi
+
+# Ensure ~/.local/bin is permanently in shell config
+for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+    if [ -f "$rc" ] && ! grep -q '\.local/bin' "$rc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+    fi
+done
 
 # 7. System Background Service Setup
 if [ "$OS" = "Darwin" ]; then
@@ -190,10 +210,17 @@ echo -e "  • Open Web HUD:   ${CYAN}maxi hud${RESET}"
 echo -e "  • Check status:   ${CYAN}maxi status${RESET}"
 echo -e "  • Stop daemon:    ${CYAN}maxi stop${RESET}"
 echo ""
+if ! command -v maxi >/dev/null 2>&1; then
+    echo -e "${YELLOW}👉 To use 'maxi' in this active terminal, run:${RESET}"
+    echo -e "   ${CYAN}export PATH=\"\$HOME/.local/bin:\$PATH\"${RESET}"
+    echo -e "   (Or invoke directly: ${CYAN}${VENV_MAXI}${RESET})"
+    echo ""
+fi
 echo -e "Hotkey:"
 if [ "$OS" = "Darwin" ]; then
     echo -e "  • Tap or hold ${BOLD}Right Option${RESET} to speak."
 else
     echo -e "  • Tap or hold ${BOLD}Control + Space${RESET} to speak."
 fi
+echo -e "  • No mic? Use Web HUD chat or REST API directly!"
 echo ""

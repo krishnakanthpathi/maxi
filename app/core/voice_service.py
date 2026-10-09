@@ -16,12 +16,25 @@ import asyncio
 import logging
 import threading
 import subprocess
+import shutil
 from pathlib import Path
 from typing import Optional, List
 
-import numpy as np
-import sounddevice as sd
-from pynput import keyboard
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    import sounddevice as sd
+except Exception:
+    sd = None
+
+try:
+    from pynput import keyboard
+except Exception:
+    keyboard = None
+
 import httpx
 
 from app.config import settings
@@ -57,12 +70,20 @@ def resolve_sound_path(sound_name: str) -> Optional[Path]:
 
 
 def play_sound(sound_name: str):
-    """Play audio chime (macOS native afplay, graceful on Windows)."""
+    """Play audio chime (macOS native afplay, Linux paplay/aplay, Windows winsound)."""
     resolved = resolve_sound_path(sound_name)
     if not resolved:
         return
     if sys.platform == "darwin":
         subprocess.Popen(["afplay", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif sys.platform.startswith("linux"):
+        for player in ("paplay", "pw-play", "aplay", "canberra-gtk-play", "ffplay"):
+            if shutil.which(player):
+                if player == "ffplay":
+                    subprocess.Popen([player, "-nodisp", "-autoexit", "-loglevel", "quiet", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    subprocess.Popen([player, str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                break
     elif sys.platform == "win32":
         try:
             import winsound
@@ -81,6 +102,8 @@ def show_notification(title: str, message: str, subtitle: str = ""):
         sub_clause = f'subtitle "{clean_sub}"' if clean_sub else ""
         script = f'display notification "{clean_msg}" with title "{clean_title}" {sub_clause}'
         subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif sys.platform.startswith("linux") and shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", title, message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         logger.info(f"[{title}] {message} ({subtitle})")
 
@@ -149,7 +172,7 @@ class VoiceHotkeyService:
         return False
 
     def _audio_callback(self, indata, frames, time_info, status):
-        if self.is_recording:
+        if self.is_recording and np is not None:
             self.audio_buffer.append(indata.copy())
             rms = float(np.sqrt(np.mean(indata**2)))
             if rms >= settings.voice_silence_threshold:
@@ -159,6 +182,9 @@ class VoiceHotkeyService:
     def start_recording(self):
         with self.lock:
             if self.is_recording:
+                return
+            if sd is None:
+                logger.warning("Microphone recording unavailable (sounddevice not installed or no audio backend).")
                 return
             self.is_recording = True
             self.audio_buffer = []
@@ -438,14 +464,21 @@ class VoiceHotkeyService:
             logger.info("Voice push-to-talk hotkey is disabled (ENABLE_VOICE_HOTKEY=False).")
             return
 
+        if keyboard is None:
+            logger.info("ℹ️ pynput keyboard listener is unavailable. Text/chat mode is fully active.")
+            return
+
         self._loop = loop
         hotkey_name = "Right Option" if self.is_mac else "Control + Space"
         logger.info(f"Initializing global {hotkey_name} voice listener (with tap-to-lock support)...")
 
-        self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
-        self._listener.daemon = True
-        self._listener.start()
-        logger.info(f"✅ Voice hotkey active: Tap {hotkey_name} to lock-in recording (or hold to speak).")
+        try:
+            self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
+            self._listener.daemon = True
+            self._listener.start()
+            logger.info(f"✅ Voice hotkey active: Tap {hotkey_name} to lock-in recording (or hold to speak).")
+        except Exception as e:
+            logger.warning(f"Voice hotkey listener could not start ({e}). Text/chat mode is fully active.")
 
     def stop(self):
         """Stops the hotkey listener and audio capture."""
