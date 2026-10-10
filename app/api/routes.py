@@ -34,7 +34,12 @@ async def health_check():
 async def handle_prompt(request: PromptRequest):
     """Stateless text and UI prompt endpoint."""
     try:
-        result = await agent.run(prompt=request.text, source=request.source)
+        from app.core.tts import tts_service
+        src = request.source or "text"
+        result = await agent.run(prompt=request.text, source=src)
+        out = result.get("output", "")
+        if out and getattr(settings, "enable_tts", True) and (src.startswith("voice") or getattr(settings, "tts_speak_all_sources", False)):
+            tts_service.speak(out)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -44,10 +49,14 @@ async def handle_prompt(request: PromptRequest):
 async def handle_voice_webhook(request: VoiceWebhookRequest):
     """Direct webhook ingest for voice apps (Whisperflow, Willow, etc.)."""
     try:
+        from app.core.tts import tts_service
         result = await agent.run(
             prompt=request.transcript,
             source=f"voice:{request.client}"
         )
+        out = result.get("output", "")
+        if out and getattr(settings, "enable_tts", True):
+            tts_service.speak(out)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -225,5 +234,51 @@ async def update_configuration(updates: dict):
         "message": msg,
         "config": get_current_config()
     }
+
+
+class TTSSpeakRequest(BaseModel):
+    text: str = Field(..., description="Text to speak aloud using Siri TTS")
+    voice: Optional[str] = Field(None, description="Optional Siri voice preset or macOS voice name (e.g. Tara, Samantha, Daniel)")
+    rate: Optional[int] = Field(None, description="Optional speaking rate in words per minute")
+
+
+@router.get("/tts")
+async def get_tts_info():
+    """Retrieve active Siri TTS configuration, voice presets, and available system voices."""
+    from app.core.tts import tts_service, SIRI_VOICE_PRESETS, resolve_siri_voice
+    return {
+        "active": {
+            "enable_tts": settings.enable_tts,
+            "tts_voice": settings.tts_voice,
+            "resolved_voice": resolve_siri_voice(settings.tts_voice),
+            "tts_rate": settings.tts_rate,
+            "tts_speak_all_sources": settings.tts_speak_all_sources,
+            "is_speaking": tts_service.is_speaking,
+        },
+        "siri_presets": SIRI_VOICE_PRESETS,
+        "available_voices": tts_service.list_available_voices(),
+    }
+
+
+@router.post("/tts/speak")
+async def speak_tts(request: TTSSpeakRequest):
+    """Speak text aloud using Siri TTS."""
+    from app.core.tts import tts_service, resolve_siri_voice
+    spoken = tts_service.speak(text=request.text, voice=request.voice, rate=request.rate)
+    return {
+        "status": "speaking" if spoken else "skipped",
+        "text": spoken,
+        "voice": resolve_siri_voice(request.voice),
+        "rate": request.rate or settings.tts_rate,
+    }
+
+
+@router.post("/tts/stop")
+async def stop_tts():
+    """Immediately stop any active Siri TTS speech."""
+    from app.core.tts import tts_service
+    tts_service.stop()
+    return {"status": "stopped"}
+
 
 

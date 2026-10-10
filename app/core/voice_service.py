@@ -46,6 +46,7 @@ import httpx
 
 from app.config import settings
 from app.core.wake_word import parse_wake_word, format_prefixed_prompt
+from app.core.tts import tts_service
 
 logger = logging.getLogger("maxi.voice")
 
@@ -292,7 +293,7 @@ class MaxiVoiceService:
                     self._broadcast({"event": "voice_stop"})
                 continue
 
-            if self.is_ptt_recording or self._is_dispatching:
+            if self.is_ptt_recording or self._is_dispatching or tts_service.is_active_or_cooldown():
                 pre_roll.clear()
                 speech_chunks.clear()
                 in_speech = False
@@ -392,6 +393,9 @@ class MaxiVoiceService:
         matched_wake_word, command = parsed
         logger.info(f"⚡ Wake Word Auto-Catch: '{matched_wake_word}' detected in \"{transcript}\"")
 
+        # Stop any active TTS speech immediately (barge-in)
+        tts_service.stop()
+
         # Audible tactile feedback immediately upon catching wake word
         play_sound(settings.voice_start_sound)
         self._broadcast({
@@ -433,8 +437,9 @@ class MaxiVoiceService:
             self.ptt_audio_buffer = []
             self.ptt_press_time = time.time()
 
-            # Suspend two-stage wake if hotkey pressed
+            # Suspend two-stage wake and interrupt any ongoing TTS speech if hotkey pressed
             self._wake_pending_command = False
+            tts_service.stop()
 
             play_sound(settings.voice_start_sound)
             self._broadcast({"event": "voice_start"})
@@ -593,6 +598,10 @@ class MaxiVoiceService:
             subtitle=prompt,
         )
 
+        # Speak response aloud using Siri TTS
+        if getattr(settings, "enable_tts", True) and agent_output:
+            tts_service.speak(agent_output)
+
     # =========================================================================
     # Keyboard Event Handlers
     # =========================================================================
@@ -655,6 +664,10 @@ class MaxiVoiceService:
         """Starts the unified Push-to-Talk hotkey listener and Wake Word auto-catch stream."""
         self._loop = loop
         self._running = True
+        tts_service.set_broadcast_callback(self._broadcast)
+
+        if getattr(settings, "enable_tts", True):
+            logger.info(f"🔊 Siri TTS active: Voice '{settings.tts_voice}' @ {settings.tts_rate}wpm")
 
         # 1. Start continuous audio stream if sounddevice is available
         if sd is not None:
@@ -700,6 +713,7 @@ class MaxiVoiceService:
         """Gracefully stops all audio streams, listeners, and worker threads."""
         self._running = False
         self._wake_pending_command = False
+        tts_service.stop()
 
         if self._listener:
             try:

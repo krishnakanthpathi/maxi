@@ -133,6 +133,28 @@ class Settings(BaseSettings):
         description="Maximum execution timeout in seconds for agent turn execution"
     )
 
+    # Siri Text-to-Speech (TTS) Configuration
+    enable_tts: bool = Field(
+        default=True,
+        alias="ENABLE_TTS",
+        description="Enable Siri Text-to-Speech voice responses"
+    )
+    tts_voice: str = Field(
+        default="Tara",
+        alias="TTS_VOICE",
+        description="Siri TTS voice preset or macOS voice name (e.g. Tara, Samantha, Daniel, Karen, Moira, Rishi)"
+    )
+    tts_rate: int = Field(
+        default=190,
+        alias="TTS_RATE",
+        description="TTS speaking rate in words per minute (default 190 for natural Siri cadence)"
+    )
+    tts_speak_all_sources: bool = Field(
+        default=False,
+        alias="TTS_SPEAK_ALL_SOURCES",
+        description="If True, speak responses for text/API prompts in addition to voice commands"
+    )
+
     def get_wake_words_list(self) -> list[str]:
         """Returns parsed, lowercase list of active wake words."""
         return [w.strip().lower() for w in self.wake_words.split(",") if w.strip()]

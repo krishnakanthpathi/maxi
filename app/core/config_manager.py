@@ -149,6 +149,26 @@ KEY_ALIASES = {
     "agent_timeout": "AGENT_TIMEOUT_SECONDS",
     "agent_timeout_seconds": "AGENT_TIMEOUT_SECONDS",
     "AGENT_TIMEOUT_SECONDS": "AGENT_TIMEOUT_SECONDS",
+
+    # Siri Text-to-Speech (TTS) aliases
+    "tts": "ENABLE_TTS",
+    "enable-tts": "ENABLE_TTS",
+    "enable_tts": "ENABLE_TTS",
+    "ENABLE_TTS": "ENABLE_TTS",
+
+    "tts-voice": "TTS_VOICE",
+    "tts_voice": "TTS_VOICE",
+    "siri-voice": "TTS_VOICE",
+    "siri_voice": "TTS_VOICE",
+    "TTS_VOICE": "TTS_VOICE",
+
+    "tts-rate": "TTS_RATE",
+    "tts_rate": "TTS_RATE",
+    "TTS_RATE": "TTS_RATE",
+
+    "tts-all": "TTS_SPEAK_ALL_SOURCES",
+    "tts_speak_all_sources": "TTS_SPEAK_ALL_SOURCES",
+    "TTS_SPEAK_ALL_SOURCES": "TTS_SPEAK_ALL_SOURCES",
 }
 
 
@@ -269,6 +289,10 @@ def get_current_config() -> Dict[str, Any]:
         "wake_words": settings.wake_words,
         "wake_word_auto_prefix": settings.wake_word_auto_prefix,
         "agent_timeout_seconds": settings.agent_timeout_seconds,
+        "enable_tts": settings.enable_tts,
+        "tts_voice": settings.tts_voice,
+        "tts_rate": settings.tts_rate,
+        "tts_speak_all_sources": settings.tts_speak_all_sources,
         "env_file": str(get_active_env_file()),
     }
 
@@ -320,6 +344,22 @@ def save_config(updates: Dict[str, str], notify_daemon: bool = True) -> Tuple[bo
                 settings.wake_word_energy_threshold = float(v)
             except ValueError:
                 pass
+        elif k == "AGENT_TIMEOUT_SECONDS":
+            try:
+                settings.agent_timeout_seconds = float(v)
+            except ValueError:
+                pass
+        elif k == "ENABLE_TTS":
+            settings.enable_tts = v.lower() in ("true", "1", "yes")
+        elif k == "TTS_VOICE":
+            settings.tts_voice = v
+        elif k == "TTS_RATE":
+            try:
+                settings.tts_rate = int(v)
+            except ValueError:
+                pass
+        elif k == "TTS_SPEAK_ALL_SOURCES":
+            settings.tts_speak_all_sources = v.lower() in ("true", "1", "yes")
 
     # 2. Write to ~/.maxi/.env
     GLOBAL_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
