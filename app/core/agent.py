@@ -52,8 +52,10 @@ class MaxiAgent:
 
     def _format_tool_output(self, output: Any) -> str:
         """Normalizes MCP tool outputs (strings, content blocks, lists, dicts) into clean text."""
+        if output is None:
+            return "Tool executed successfully with no output."
         if isinstance(output, str):
-            return output
+            return output if output.strip() else "Tool executed successfully with no output."
         if isinstance(output, list):
             texts = []
             for item in output:
@@ -61,7 +63,8 @@ class MaxiAgent:
                     texts.append(str(item["text"]))
                 else:
                     texts.append(str(item))
-            return "\n".join(texts)
+            res = "\n".join(texts).strip()
+            return res or "Tool executed successfully with no output."
         if isinstance(output, dict):
             if "text" in output:
                 return str(output["text"])

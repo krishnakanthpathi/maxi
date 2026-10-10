@@ -30,6 +30,14 @@ class TestWakeWordConfiguration(unittest.TestCase):
         self.assertEqual(s.wake_word_silence_duration, 1.8)
         self.assertEqual(s.wake_word_energy_threshold, 0.008)
         self.assertEqual(s.wake_word_max_duration, 45.0)
+        self.assertEqual(s.agent_timeout_seconds, 90.0)
+
+    def test_agent_timeout_key_aliases(self):
+        self.assertEqual(KEY_ALIASES.get("agent-timeout"), "AGENT_TIMEOUT_SECONDS")
+        self.assertEqual(KEY_ALIASES.get("agent_timeout"), "AGENT_TIMEOUT_SECONDS")
+        cfg = get_current_config()
+        self.assertIn("agent_timeout_seconds", cfg)
+        self.assertEqual(cfg["agent_timeout_seconds"], 90.0)
 
 
 if __name__ == "__main__":

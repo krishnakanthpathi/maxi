@@ -18,6 +18,7 @@ import time
 import wave
 import queue
 import asyncio
+import concurrent.futures
 import logging
 import threading
 import subprocess
@@ -545,22 +546,27 @@ class MaxiVoiceService:
 
         logger.info(f"⚡ Activating Maxi Agent Function with prompt: \"{prompt}\" (source: {source})")
 
+        timeout_s = getattr(settings, "agent_timeout_seconds", 90.0)
         try:
             if self._loop and self._loop.is_running():
                 future = asyncio.run_coroutine_threadsafe(
                     agent.run(prompt=prompt, source=source),
                     self._loop,
                 )
-                result = future.result(timeout=35)
+                result = future.result(timeout=timeout_s)
                 agent_output = result.get("output", "")
                 tools_used = result.get("tools_used", [])
             else:
                 result = asyncio.run(agent.run(prompt=prompt, source=source))
                 agent_output = result.get("output", "")
                 tools_used = result.get("tools_used", [])
+        except (TimeoutError, concurrent.futures.TimeoutError, asyncio.TimeoutError):
+            logger.error(f"Voice command timed out after {timeout_s}s: \"{prompt}\"")
+            agent_output = f"Command timed out after {int(timeout_s)} seconds. Please try again."
         except Exception as e:
-            logger.error(f"Error dispatching voice command to main agent: {e}")
-            agent_output = f"Execution error: {str(e)}"
+            err_desc = str(e).strip() or type(e).__name__
+            logger.error(f"Error dispatching voice command to main agent: {err_desc}", exc_info=True)
+            agent_output = f"Execution error: {err_desc}"
         finally:
             self._is_dispatching = False
 

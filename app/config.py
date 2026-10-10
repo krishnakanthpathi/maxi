@@ -127,6 +127,11 @@ class Settings(BaseSettings):
         alias="WAKE_WORD_MAX_DURATION",
         description="Maximum allowable duration in seconds for a continuous voice utterance"
     )
+    agent_timeout_seconds: float = Field(
+        default=90.0,
+        alias="AGENT_TIMEOUT_SECONDS",
+        description="Maximum execution timeout in seconds for agent turn execution"
+    )
 
     def get_wake_words_list(self) -> list[str]:
         """Returns parsed, lowercase list of active wake words."""

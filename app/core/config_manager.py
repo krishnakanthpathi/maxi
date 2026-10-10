@@ -141,9 +141,14 @@ KEY_ALIASES = {
     "WAKE_WORD_SILENCE_DURATION": "WAKE_WORD_SILENCE_DURATION",
 
     "wake-threshold": "WAKE_WORD_ENERGY_THRESHOLD",
-    "wake_threshold": "WAKE_WORD_ENERGY_THRESHOLD",
     "wake_word_energy_threshold": "WAKE_WORD_ENERGY_THRESHOLD",
     "WAKE_WORD_ENERGY_THRESHOLD": "WAKE_WORD_ENERGY_THRESHOLD",
+
+    # Agent execution timeout
+    "agent-timeout": "AGENT_TIMEOUT_SECONDS",
+    "agent_timeout": "AGENT_TIMEOUT_SECONDS",
+    "agent_timeout_seconds": "AGENT_TIMEOUT_SECONDS",
+    "AGENT_TIMEOUT_SECONDS": "AGENT_TIMEOUT_SECONDS",
 }
 
 
@@ -263,6 +268,7 @@ def get_current_config() -> Dict[str, Any]:
         "enable_wake_word": settings.enable_wake_word,
         "wake_words": settings.wake_words,
         "wake_word_auto_prefix": settings.wake_word_auto_prefix,
+        "agent_timeout_seconds": settings.agent_timeout_seconds,
         "env_file": str(get_active_env_file()),
     }
 
