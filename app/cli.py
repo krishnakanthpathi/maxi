@@ -447,9 +447,6 @@ def cmd_config(args):
             "VOICE_HOTKEY": cfg.get("voice_hotkey", "auto"),
             "VOICE_AUTO_ENDPOINT": cfg["auto_endpoint"],
             "ENABLE_VOICE_HOTKEY": cfg["hotkey_enabled"],
-            "ENABLE_WAKE_WORD": cfg.get("enable_wake_word", False),
-            "VOICE_WAKE_WORDS": cfg.get("wake_words", "hey maxi,hey siri"),
-            "WAKE_WORD_AUTO_PREFIX": cfg.get("wake_word_auto_prefix", False),
             "ENABLE_TTS": cfg.get("enable_tts", True),
             "TTS_VOICE": cfg.get("tts_voice", "Tara"),
             "TTS_RATE": cfg.get("tts_rate", 190),
@@ -555,9 +552,6 @@ def cmd_config(args):
 
     print("⚙️ Audio & Interface:")
     print(f"   Push-to-Talk Hotkey: {hotkey_name} ({'Active' if cfg['hotkey_enabled'] else 'Disabled'})")
-    wake_status = "Active" if cfg.get("enable_wake_word", False) else "Disabled"
-    print(f"   Wake Word Auto-Catch: {wake_status} (Triggers: {cfg.get('wake_words', 'hey maxi,hey siri')})")
-    print(f"   Prompt Auto-Prefix:  {'Enabled (Hey Maxi, ...)' if cfg.get('wake_word_auto_prefix', False) else 'Disabled'}")
     print(f"   Auto-Endpoint:       {'Enabled' if cfg['auto_endpoint'] else 'Disabled (Hold to speak)'}")
     print(f"   Config File:         {cfg['env_file']}")
     print("━" * 58)
@@ -568,7 +562,6 @@ def cmd_config(args):
     print("  • Change TTS speed (WPM):     maxi config set tts-rate 190")
     print("  • Toggle TTS on/off:          maxi config set tts true/false")
     print("  • Switch LLM preset:          maxi config preset <ollama|groq|openrouter>")
-    print("  • Toggle hands-free wake:     maxi config set wake-word true/false")
     print("  • Interactive wizard:         maxi config wizard")
     print("")
 
