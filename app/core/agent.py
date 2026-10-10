@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
+from langchain_core.tools import BaseTool
 from app.config import settings
 from app.core.skills import skill_registry
 from app.core.mcp_client import mcp_manager
+from app.core.lmem_tools import get_lmem_tools
 
 logger = logging.getLogger("maxi.agent")
 
@@ -93,6 +95,10 @@ class MaxiAgent:
         except Exception as e:
             logger.error(f"Failed to record turn to history log: {e}")
 
+    def _get_all_tools(self) -> List[BaseTool]:
+        """Combines native MCP tools with first-class LightMem memory tools."""
+        return mcp_manager.get_tools() + get_lmem_tools()
+
     async def run(self, prompt: str, source: str = "text") -> Dict[str, Any]:
         """Execute prompt against OpenAI-compatible endpoint with MCP tool execution and 5-turn history."""
         # Check for explicit session reset request
@@ -111,7 +117,7 @@ class MaxiAgent:
 
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
-        tools = mcp_manager.get_tools()
+        tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
         logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded, {len(self._history)//2} turns in memory)")
@@ -218,7 +224,7 @@ class MaxiAgent:
         """Stream token-by-token response over WebSockets, executing tool calls when requested."""
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
-        tools = mcp_manager.get_tools()
+        tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
         messages: List[BaseMessage] = [

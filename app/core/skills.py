@@ -54,6 +54,13 @@ class SkillRegistry:
 
                 # Generate simple keyword set for matching (stem + heading words)
                 raw_keywords = set(re.findall(r"\w+", f"{name} {description}".lower()))
+                # Also extract explicitly declared triggers/keywords if present in markdown
+                # e.g., <!-- triggers: ... --> or Triggers: ... or Keywords: ...
+                for line in lines:
+                    trigger_match = re.search(r"(?:<!--\s*(?:triggers|keywords):|^(?:triggers|keywords):)\s*(.*?)(?:-->|$)", line, re.IGNORECASE)
+                    if trigger_match:
+                        raw_keywords.update(re.findall(r"\w+", trigger_match.group(1).lower()))
+
                 # Filter out short or trivial words
                 keywords = {kw for kw in raw_keywords if len(kw) > 2}
 
@@ -81,19 +88,31 @@ class SkillRegistry:
 
     def find_relevant_skills(self, prompt: str, source: str = "text") -> List[Skill]:
         """Finds skills matching prompt keywords, skill names, or execution context."""
-        prompt_words = set(re.findall(r"\w+", prompt.lower()))
+        prompt_lower = prompt.lower()
+        prompt_words = set(re.findall(r"\w+", prompt_lower))
         matched: List[Skill] = []
 
         # If input came from voice, always activate voice_interaction
         if source.startswith("voice") and "voice_interaction" in self._skills:
             matched.append(self._skills["voice_interaction"])
 
+        # Proactive memory domain triggers: preferences, favorites, identity, habits
+        memory_patterns = [
+            r"\bfavorite\b", r"\bfavourite\b", r"\bprefer(?:ence|ences)?\b",
+            r"\bremember\b", r"\brecall\b", r"\bmemory\b", r"\blmem\b",
+            r"\bwho is\b", r"\bwhat is my\b", r"\bwhat's my\b", r"\bdo i (?:like|have|prefer)\b",
+            r"\bmy (?:song|music|movie|routine|friend|family|habit|email|password|key|token|nickname)\b"
+        ]
+        if "memory" in self._skills and self._skills["memory"].enabled:
+            if any(re.search(pat, prompt_lower) for pat in memory_patterns):
+                matched.append(self._skills["memory"])
+
         for name, skill in self._skills.items():
             if not skill.enabled or skill in matched:
                 continue
 
             # Exact skill name mentioned or keywords overlap
-            if name in prompt.lower() or bool(skill.keywords.intersection(prompt_words)):
+            if name in prompt_lower or bool(skill.keywords.intersection(prompt_words)):
                 matched.append(skill)
 
         # If no specific skill matched, default to all enabled general skills
