@@ -212,11 +212,135 @@ def _run_config_wizard():
             updates["VOICE_MODEL"] = "whisper-1"
             updates["VOICE_API_KEY"] = "local-key"
 
+        print("\nSelect Siri TTS Output Voice:")
+        print("  1) Tara     (Siri Female - India Premium, en_IN)")
+        print("  2) Samantha (Siri Female - US Classic, en_US)")
+        print("  3) Daniel   (Siri Male   - UK British, en_GB)")
+        print("  4) Karen    (Siri Female - Australia, en_AU)")
+        print("  5) Moira    (Siri Female - Ireland, en_IE)")
+        print("  6) Rishi    (Siri Male   - India, en_IN)")
+        print("  7) Aman     (Siri Male   - India Conversational, en_IN)")
+        print("  8) Custom macOS voice name (e.g. Eddy, Flo, Tessa)")
+        print("  9) Disable TTS Voice Output")
+
+        cur_tts_voice = cfg.get("tts_voice", "Tara")
+        t_choice = input(f"Enter choice [1-9, default keep '{cur_tts_voice}']: ").strip()
+        tts_map = {
+            "1": "Tara",
+            "2": "Samantha",
+            "3": "Daniel",
+            "4": "Karen",
+            "5": "Moira",
+            "6": "Rishi",
+            "7": "Aman",
+        }
+        if t_choice in tts_map:
+            updates["ENABLE_TTS"] = "true"
+            updates["TTS_VOICE"] = tts_map[t_choice]
+        elif t_choice == "8":
+            custom_v = input(f"Enter macOS voice name [{cur_tts_voice}]: ").strip() or cur_tts_voice
+            updates["ENABLE_TTS"] = "true"
+            updates["TTS_VOICE"] = custom_v
+        elif t_choice == "9":
+            updates["ENABLE_TTS"] = "false"
+
         _, msg = save_config(updates)
         print("\n🎉 Configuration updated successfully!")
         print(f"📜 {msg}\n")
     except (KeyboardInterrupt, EOFError):
         print("\nWizard cancelled.")
+
+
+def _print_available_voices(preview_voice: str = None):
+    """Display all Siri TTS presets and installed macOS voices."""
+    from app.core.config_manager import get_current_config
+    from app.core.tts import (
+        SIRI_VOICE_PRESETS, SIRI_VOICE_ALIASES,
+        resolve_siri_voice, tts_service
+    )
+
+    cfg = get_current_config()
+    active_raw = cfg.get("tts_voice", "Tara")
+    active_resolved = resolve_siri_voice(active_raw)
+    tts_enabled = cfg.get("enable_tts", True)
+    tts_rate = cfg.get("tts_rate", 190)
+
+    print("\n🔊 Maxi Siri TTS Voices")
+    print("━" * 64)
+    print(f"Active Voice:  {active_resolved} (Configured: '{active_raw}', Rate: {tts_rate} WPM, {'Enabled' if tts_enabled else 'Disabled'})")
+    print("")
+    print("🌟 Recommended Siri Voice Presets:")
+    for key, info in SIRI_VOICE_PRESETS.items():
+        marker = "✅ (Active)" if info["voice"].lower() == active_resolved.lower() else ""
+        print(f"  • {key:<10} -> {info['voice']:<10} [{info['locale']}]  {info['description']} {marker}")
+
+    print("\n🏷️  Quick Aliases:")
+    print("  siri / siri-in -> Tara   | siri-us -> Samantha | siri-uk -> Daniel")
+    print("  siri-au        -> Karen  | siri-ie -> Moira    | rishi / aman")
+
+    installed = tts_service.list_available_voices()
+    if installed:
+        print(f"\n🍎 All Installed macOS English Voices ({len(installed)} available):")
+        for v in installed:
+            v_base = v["name"].split("(")[0].strip().lower()
+            is_act = "✅" if v_base == active_resolved.lower() or v["name"].lower() == active_resolved.lower() else "  "
+            print(f"  {is_act} {v['name']:<26} [{v['locale']}]  \"{v['sample']}\"")
+
+    print("━" * 64)
+    print("How to change or test TTS voice:")
+    print("  • Change voice:       maxi config set tts-voice samantha")
+    print("                        maxi config --tts-voice daniel")
+    print("                        maxi tts set tara")
+    print("  • Change speed (WPM): maxi config set tts-rate 195")
+    print("  • Toggle TTS on/off:  maxi config set tts true/false")
+    print("  • Preview a voice:    maxi tts test samantha")
+    print("")
+
+    if preview_voice:
+        resolved = resolve_siri_voice(preview_voice)
+        sample_text = f"Hello! I am Maxi, speaking with the {resolved} voice."
+        print(f"🔊 Previewing '{resolved}' ({tts_rate} WPM): \"{sample_text}\"")
+        tts_service.speak(sample_text, voice=resolved, rate=tts_rate, block=True)
+
+
+def cmd_tts(args):
+    """Manage and preview Siri TTS voices directly from the terminal."""
+    from app.core.config_manager import save_config
+    from app.core.tts import resolve_siri_voice, tts_service
+
+    action = getattr(args, "tts_action", None) or "voices"
+    if action == "voices":
+        _print_available_voices(preview_voice=getattr(args, "test", None))
+    elif action == "set":
+        voice_val = getattr(args, "voice_name", None)
+        if not voice_val:
+            print("Usage: maxi tts set <voice_name>")
+            return
+        resolved = resolve_siri_voice(voice_val)
+        updates = {"TTS_VOICE": resolved, "ENABLE_TTS": "true"}
+        if getattr(args, "rate", None):
+            updates["TTS_RATE"] = str(args.rate)
+        _, msg = save_config(updates)
+        print(f"✅ Switched Siri TTS voice to: {resolved}")
+        print(f"📜 {msg}")
+        if not getattr(args, "no_preview", False):
+            tts_service.speak(f"Hi, I'm Maxi using the {resolved} voice.", voice=resolved, block=True)
+    elif action == "test":
+        voice_val = getattr(args, "voice_name", None)
+        resolved = resolve_siri_voice(voice_val)
+        text = getattr(args, "text", None) or f"Hello! I am Maxi speaking with the {resolved} voice."
+        print(f"🔊 Testing TTS voice '{resolved}': \"{text}\"")
+        tts_service.speak(text, voice=resolved, block=True)
+    elif action == "on":
+        _, msg = save_config({"ENABLE_TTS": "true"})
+        print("✅ Siri TTS enabled.")
+        print(f"📜 {msg}")
+    elif action == "off":
+        _, msg = save_config({"ENABLE_TTS": "false"})
+        print("🔇 Siri TTS disabled.")
+        print(f"📜 {msg}")
+    else:
+        _print_available_voices()
 
 
 def cmd_config(args):
@@ -225,6 +349,12 @@ def cmd_config(args):
         get_current_config, save_config, PRESETS, VOICE_PRESETS,
         KEY_ALIASES, mask_secret
     )
+    from app.core.tts import SIRI_VOICE_PRESETS, SIRI_VOICE_ALIASES, resolve_siri_voice
+
+    # 0. Voices subcommand
+    if getattr(args, "config_action", None) == "voices" or getattr(args, "list_voices", False):
+        _print_available_voices(preview_voice=getattr(args, "test_voice", None))
+        return
 
     # 1. Preset subcommand or flag
     preset_arg = getattr(args, "preset_name", None) or getattr(args, "preset", None)
@@ -280,10 +410,23 @@ def cmd_config(args):
             print(f"   Key:   {mask_secret(updates['VOICE_API_KEY'])}")
             print(f"📜 {msg}")
             return
+        elif preset_name in SIRI_VOICE_PRESETS or preset_name in SIRI_VOICE_ALIASES:
+            resolved = resolve_siri_voice(preset_name)
+            p_info = SIRI_VOICE_PRESETS.get(resolved.lower(), {"name": resolved, "locale": "en"})
+            updates = {
+                "TTS_VOICE": resolved,
+                "ENABLE_TTS": "true",
+            }
+            _, msg = save_config(updates)
+            print(f"✅ Switched Siri TTS voice preset to {p_info.get('name', resolved)}:")
+            print(f"   Voice:  {resolved} ({p_info.get('locale', 'en')})")
+            print(f"📜 {msg}")
+            return
         else:
             print(f"❌ Unknown preset '{preset_name}'.")
-            print(f"   Available LLM presets:   {', '.join(PRESETS.keys())}")
-            print(f"   Available Voice presets: {', '.join(VOICE_PRESETS.keys())}")
+            print(f"   Available LLM presets:      {', '.join(PRESETS.keys())}")
+            print(f"   Available Voice presets:    {', '.join(VOICE_PRESETS.keys())}")
+            print(f"   Available Siri TTS presets: {', '.join(SIRI_VOICE_PRESETS.keys())}")
             return
 
     # 2. Get subcommand
@@ -304,9 +447,14 @@ def cmd_config(args):
             "VOICE_HOTKEY": cfg.get("voice_hotkey", "auto"),
             "VOICE_AUTO_ENDPOINT": cfg["auto_endpoint"],
             "ENABLE_VOICE_HOTKEY": cfg["hotkey_enabled"],
-            "ENABLE_WAKE_WORD": cfg.get("enable_wake_word", True),
+            "ENABLE_WAKE_WORD": cfg.get("enable_wake_word", False),
             "VOICE_WAKE_WORDS": cfg.get("wake_words", "hey maxi,hey siri"),
-            "WAKE_WORD_AUTO_PREFIX": cfg.get("wake_word_auto_prefix", True),
+            "WAKE_WORD_AUTO_PREFIX": cfg.get("wake_word_auto_prefix", False),
+            "ENABLE_TTS": cfg.get("enable_tts", True),
+            "TTS_VOICE": cfg.get("tts_voice", "Tara"),
+            "TTS_RATE": cfg.get("tts_rate", 190),
+            "TTS_SPEAK_ALL_SOURCES": cfg.get("tts_speak_all_sources", False),
+            "AGENT_TIMEOUT_SECONDS": cfg.get("agent_timeout_seconds", 90.0),
         }
         val = mapping.get(canonical, "Unknown key")
         print(f"{k} = {val}")
@@ -319,13 +467,16 @@ def cmd_config(args):
         if not k or v is None:
             print("Usage: maxi config set <key> <value>")
             print("Examples:")
+            print("  maxi config set tts-voice samantha")
+            print("  maxi config set tts-rate 190")
+            print("  maxi config set tts true")
             print("  maxi config set llm-url http://localhost:11434/v1")
             print("  maxi config set llm-model llama3.2")
-            print("  maxi config set llm-key ollama")
-            print("  maxi config set voice-url https://api.groq.com/openai/v1")
             print("  maxi config set voice-key gsk_...")
             return
         canonical = KEY_ALIASES.get(k.lower(), k)
+        if canonical == "TTS_VOICE":
+            v = resolve_siri_voice(v)
         _, msg = save_config({canonical: v})
         disp_val = mask_secret(v) if "KEY" in canonical.upper() else v
         print(f"✅ Set {canonical} = {disp_val}")
@@ -346,6 +497,12 @@ def cmd_config(args):
         flag_updates["VOICE_API_KEY"] = args.voice_key
     if getattr(args, "voice_model", None):
         flag_updates["VOICE_MODEL"] = args.voice_model
+    if getattr(args, "tts_voice", None):
+        flag_updates["TTS_VOICE"] = resolve_siri_voice(args.tts_voice)
+    if getattr(args, "tts_rate", None) is not None:
+        flag_updates["TTS_RATE"] = str(args.tts_rate)
+    if getattr(args, "tts", None) is not None:
+        flag_updates["ENABLE_TTS"] = str(args.tts).lower()
 
     if flag_updates:
         _, msg = save_config(flag_updates)
@@ -366,6 +523,11 @@ def cmd_config(args):
     llm_preset_info = PRESETS.get(cfg["llm_preset"], {}).get("name", "Custom Endpoint")
     voice_preset_info = VOICE_PRESETS.get(cfg["voice_preset"], {}).get("name", "Custom STT")
 
+    tts_voice_raw = cfg.get("tts_voice", "Tara")
+    tts_voice_resolved = resolve_siri_voice(tts_voice_raw)
+    tts_preset_meta = SIRI_VOICE_PRESETS.get(tts_voice_resolved.lower(), {})
+    tts_voice_label = tts_preset_meta.get("name", f"{tts_voice_resolved} (macOS Voice)")
+
     print("\n⚡ Maxi Configuration")
     print("━" * 58)
     print(f"🧠 LLM Provider:        {llm_preset_info}")
@@ -373,10 +535,15 @@ def cmd_config(args):
     print(f"   Model:               {cfg['llm_model']}")
     print(f"   API Key:             {cfg['llm_key_masked']}")
     print("")
-    print(f"🎙️ Voice Provider:      {voice_preset_info}")
+    print(f"🎙️ Voice STT Provider:  {voice_preset_info}")
     print(f"   Endpoint URL:        {cfg['voice_url']}")
     print(f"   Model:               {cfg['voice_model']}")
     print(f"   API Key:             {cfg['voice_key_masked']}")
+    print("")
+    print(f"🔊 Siri TTS Output:     {'Active' if cfg.get('enable_tts', True) else 'Disabled'}")
+    print(f"   Active Voice:        {tts_voice_resolved} — {tts_voice_label}")
+    print(f"   Speech Rate:         {cfg.get('tts_rate', 190)} WPM")
+    print(f"   Siri Presets:        {', '.join(SIRI_VOICE_PRESETS.keys())}")
     print("")
     hotkey_pref = (cfg.get("voice_hotkey") or "auto").lower()
     if hotkey_pref == "auto":
@@ -388,21 +555,20 @@ def cmd_config(args):
 
     print("⚙️ Audio & Interface:")
     print(f"   Push-to-Talk Hotkey: {hotkey_name} ({'Active' if cfg['hotkey_enabled'] else 'Disabled'})")
-    wake_status = "Active" if cfg.get("enable_wake_word", True) else "Disabled"
+    wake_status = "Active" if cfg.get("enable_wake_word", False) else "Disabled"
     print(f"   Wake Word Auto-Catch: {wake_status} (Triggers: {cfg.get('wake_words', 'hey maxi,hey siri')})")
-    print(f"   Prompt Auto-Prefix:  {'Enabled (Hey Maxi, ...)' if cfg.get('wake_word_auto_prefix', True) else 'Disabled'}")
+    print(f"   Prompt Auto-Prefix:  {'Enabled (Hey Maxi, ...)' if cfg.get('wake_word_auto_prefix', False) else 'Disabled'}")
     print(f"   Auto-Endpoint:       {'Enabled' if cfg['auto_endpoint'] else 'Disabled (Hold to speak)'}")
     print(f"   Config File:         {cfg['env_file']}")
     print("━" * 58)
     print("Commands:")
-    print("  • Switch to Ollama (Local):   maxi config preset ollama")
-    print("  • Switch to Groq (Cloud):     maxi config preset groq")
-    print("  • Switch to OpenRouter:       maxi config preset openrouter")
+    print("  • List all TTS voices:        maxi config voices  (or: maxi tts)")
+    print("  • Change Siri TTS voice:      maxi config set tts-voice <tara|samantha|daniel|karen|moira|rishi|aman>")
+    print("  • Preview a TTS voice:        maxi tts test <voice>")
+    print("  • Change TTS speed (WPM):     maxi config set tts-rate 190")
+    print("  • Toggle TTS on/off:          maxi config set tts true/false")
+    print("  • Switch LLM preset:          maxi config preset <ollama|groq|openrouter>")
     print("  • Toggle hands-free wake:     maxi config set wake-word true/false")
-    print("  • Set wake keywords:          maxi config set wake-words \"hey maxi,hey siri\"")
-    print("  • Set custom setting:         maxi config set llm-url <url>")
-    print("                                maxi config set llm-model <model>")
-    print("                                maxi config set voice-key <key>")
     print("  • Interactive wizard:         maxi config wizard")
     print("")
 
@@ -433,32 +599,60 @@ def main():
     # hud
     subparsers.add_parser("hud", help="Open Maxi HUD in browser")
 
+    # tts
+    p_tts = subparsers.add_parser("tts", help="List, preview, and configure Siri TTS voices")
+    p_tts.add_argument("--test", help="Preview a specific voice aloud")
+    tts_sub = p_tts.add_subparsers(dest="tts_action", help="TTS subaction")
+
+    p_tts_voices = tts_sub.add_parser("voices", help="List all available Siri and macOS TTS voices")
+    p_tts_voices.add_argument("--test", help="Preview a specific voice aloud")
+
+    p_tts_set = tts_sub.add_parser("set", help="Set the active Siri TTS voice")
+    p_tts_set.add_argument("voice_name", help="Voice name or alias (e.g. tara, samantha, daniel, karen, moira, rishi, aman)")
+    p_tts_set.add_argument("--rate", type=int, help="Optional speech rate in WPM (default 190)")
+    p_tts_set.add_argument("--no-preview", action="store_true", help="Do not play audio preview after switching")
+
+    p_tts_test = tts_sub.add_parser("test", help="Speak a sample phrase with a voice")
+    p_tts_test.add_argument("voice_name", nargs="?", default=None, help="Voice to preview (defaults to active voice)")
+    p_tts_test.add_argument("text", nargs="?", default=None, help="Optional custom text to speak")
+
+    tts_sub.add_parser("on", help="Enable Siri TTS voice output")
+    tts_sub.add_parser("off", help="Disable Siri TTS voice output")
+
     # config
-    p_cfg = subparsers.add_parser("config", help="View or update LLM and Voice configuration")
+    p_cfg = subparsers.add_parser("config", help="View or update LLM, Voice STT, and Siri TTS configuration")
     p_cfg.add_argument("--llm-url", help="Set OpenAI-compatible LLM endpoint URL")
     p_cfg.add_argument("--llm-key", help="Set LLM API key")
     p_cfg.add_argument("--llm-model", help="Set target model (e.g. llama3.2, llama-3.3-70b-versatile)")
     p_cfg.add_argument("--voice-url", help="Set Voice STT endpoint URL")
     p_cfg.add_argument("--voice-key", help="Set Voice API key")
     p_cfg.add_argument("--voice-model", help="Set Voice model (e.g. whisper-large-v3-turbo)")
-    p_cfg.add_argument("--preset", help="Quick switch preset (ollama, groq, openrouter)")
+    p_cfg.add_argument("--tts-voice", help="Set Siri TTS voice (e.g. tara, samantha, daniel, karen, moira, rishi, aman)")
+    p_cfg.add_argument("--tts-rate", type=int, help="Set Siri TTS speech rate in WPM (e.g. 190)")
+    p_cfg.add_argument("--tts", choices=["true", "false", "on", "off"], help="Enable or disable Siri TTS output")
+    p_cfg.add_argument("--voices", dest="list_voices", action="store_true", help="List available Siri & macOS TTS voices")
+    p_cfg.add_argument("--preset", help="Quick switch preset (ollama, groq, openrouter, or siri voice name)")
     p_cfg.add_argument("-i", "--interactive", action="store_true", help="Launch interactive config wizard")
 
     cfg_sub = p_cfg.add_subparsers(dest="config_action", help="Config subaction")
 
     # config set <key> <value>
     p_set = cfg_sub.add_parser("set", help="Set a configuration key")
-    p_set.add_argument("key_name", help="Key name (e.g. llm-url, llm-key, llm-model, voice-url, voice-key)")
+    p_set.add_argument("key_name", help="Key name (e.g. tts-voice, tts-rate, tts, llm-url, llm-model, voice-key)")
     p_set.add_argument("value", help="Value to set")
 
     # config get <key>
     p_get = cfg_sub.add_parser("get", help="Get a configuration key value")
-    p_get.add_argument("key_name", help="Key name to inspect")
+    p_get.add_argument("key_name", help="Key name to inspect (e.g. tts-voice, tts-rate, tts)")
 
     # config preset <name>
-    p_pre = cfg_sub.add_parser("preset", help="Apply preconfigured profile (ollama, groq, openrouter)")
-    p_pre.add_argument("preset_name", help="Preset name: ollama, groq, openrouter, groq-whisper, local-whisper")
+    p_pre = cfg_sub.add_parser("preset", help="Apply preconfigured profile (ollama, groq, openrouter, or Siri voice)")
+    p_pre.add_argument("preset_name", help="Preset name: ollama, groq, openrouter, tara, samantha, daniel, karen, moira, rishi")
     p_pre.add_argument("--key", help="Optional API key for this preset")
+
+    # config voices
+    p_voices = cfg_sub.add_parser("voices", help="List available Siri TTS presets and installed macOS voices")
+    p_voices.add_argument("--test", dest="test_voice", help="Preview a specific voice aloud")
 
     # config wizard
     cfg_sub.add_parser("wizard", help="Interactive step-by-step configuration wizard")
@@ -477,6 +671,8 @@ def main():
         cmd_status(args)
     elif args.command == "hud":
         cmd_hud(args)
+    elif args.command == "tts":
+        cmd_tts(args)
     elif args.command == "config":
         cmd_config(args)
     else:
@@ -485,4 +681,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

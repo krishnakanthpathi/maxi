@@ -76,6 +76,12 @@ SIRI_VOICE_PRESETS: Dict[str, Dict[str, str]] = {
         "locale": "en_IN",
         "description": "Apple Siri Indian English male voice"
     },
+    "aman": {
+        "name": "Siri Male (Aman - IN)",
+        "voice": "Aman",
+        "locale": "en_IN",
+        "description": "Apple Siri Indian English conversational male voice"
+    },
 }
 
 
