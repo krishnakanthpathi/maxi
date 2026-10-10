@@ -492,14 +492,7 @@ class MaxiVoiceService:
         stt_ms = round((time.perf_counter() - t0) * 1000, 1)
         logger.info(f"🗣️ Push-to-Talk Transcript ({stt_ms}ms): \"{transcript}\"")
 
-        # Format prompt with 'Hey Maxi,' prefix if enabled
-        prefixed_prompt = (
-            format_prefixed_prompt(transcript)
-            if settings.wake_word_auto_prefix
-            else transcript
-        )
-
-        self._dispatch_command(prefixed_prompt, source="voice:hotkey", trigger_transcript=transcript)
+        self._dispatch_command(transcript, source="voice:hotkey", trigger_transcript=transcript)
 
     # =========================================================================
     # STT Transcription & Agent Execution
@@ -527,7 +520,6 @@ class MaxiVoiceService:
         data = {
             "model": settings.voice_model,
             "response_format": "json",
-            "prompt": "Computer assistant voice command: Hey Maxi, Hey Siri.",
         }
 
         try:

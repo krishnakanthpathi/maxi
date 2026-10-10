@@ -96,9 +96,9 @@ class Settings(BaseSettings):
         description="Silence duration in seconds before auto-stopping recording (if auto_endpoint enabled)"
     )
 
-    # Hands-free Wake Word Auto-Catch Settings ("Hey Maxi" / "Hey Siri")
+    # Hands-free Wake Word Auto-Catch Settings (Disabled by default; use Push-to-Talk hotkey)
     enable_wake_word: bool = Field(
-        default=True,
+        default=False,
         alias="ENABLE_WAKE_WORD",
         description="Enable continuous hands-free wake word listener ('Hey Maxi' / 'Hey Siri')"
     )
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         description="Comma-separated list of wake words to auto-catch and trigger agent execution"
     )
     wake_word_auto_prefix: bool = Field(
-        default=True,
+        default=False,
         alias="WAKE_WORD_AUTO_PREFIX",
         description="Ensure voice commands are automatically prefixed with 'Hey Maxi,' when activating the agent"
     )

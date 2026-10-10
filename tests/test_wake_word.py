@@ -153,7 +153,7 @@ class TestVoiceServiceWakeWorkflow(unittest.TestCase):
         mock_dispatch.assert_called_once()
         args, kwargs = mock_dispatch.call_args
         dispatched_prompt = args[0]
-        self.assertEqual(dispatched_prompt, "Hey Maxi, What is the date today?")
+        self.assertEqual(dispatched_prompt, "What is the date today?")
 
 
 if __name__ == "__main__":

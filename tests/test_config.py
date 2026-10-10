@@ -6,8 +6,8 @@ from app.core.config_manager import get_current_config, save_config, KEY_ALIASES
 class TestWakeWordConfiguration(unittest.TestCase):
     def test_settings_default_wake_words(self):
         s = Settings()
-        self.assertTrue(s.enable_wake_word)
-        self.assertTrue(s.wake_word_auto_prefix)
+        self.assertFalse(s.enable_wake_word)
+        self.assertFalse(s.wake_word_auto_prefix)
         wake_list = s.get_wake_words_list()
         self.assertIn("hey maxi", wake_list)
         self.assertIn("hey siri", wake_list)
