@@ -75,9 +75,8 @@ class MaxiAgent:
         return base_prompt
 
     def _record_turn(self, source: str, prompt: str, output: str, tools_used: List[str], status: str):
-        """Appends conversation turn to audit history file for external logging/analytics."""
         try:
-            history_path = Path(self.settings.history_file_path)
+            history_path = self.settings.get_history_file()
             history_path.parent.mkdir(parents=True, exist_ok=True)
             
             record = {

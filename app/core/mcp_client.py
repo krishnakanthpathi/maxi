@@ -40,11 +40,29 @@ class MCPClientManager:
 
             if "command" in cfg:
                 # Stdio transport
+                import os
+                server_env = dict(os.environ)
+                if isinstance(cfg.get("env"), dict):
+                    server_env.update(cfg["env"])
+                home = str(Path.home())
+                extra_paths = [
+                    f"{home}/.local/bin",
+                    f"{home}/.lightmem/bin",
+                    "/opt/homebrew/bin",
+                    "/opt/homebrew/sbin",
+                    "/usr/local/bin",
+                    "/Library/Frameworks/Python.framework/Versions/3.14/bin",
+                    "/Library/Frameworks/Python.framework/Versions/3.12/bin",
+                ]
+                existing_path = server_env.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+                server_env["PATH"] = ":".join(extra_paths) + ":" + existing_path
+                server_env["HOME"] = home
+
                 connections[name] = {
                     "transport": "stdio",
                     "command": cfg["command"],
                     "args": cfg.get("args", []),
-                    "env": cfg.get("env") or None,
+                    "env": server_env,
                 }
             elif "url" in cfg:
                 # SSE transport

@@ -164,13 +164,23 @@ class Settings(BaseSettings):
         description="Directory containing custom markdown skill files (*.md)"
     )
     history_file_path: str = Field(
-        default=".maxi/history.jsonl",
+        default=str(Path.home() / ".maxi" / "history.jsonl"),
         alias="MAXI_HISTORY_FILE",
         description="Path to append-only turn history audit log"
     )
 
     # Registered MCP Servers (overridden by config file if present)
     mcp_servers: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    def get_history_file(self) -> Path:
+        """Safely resolves history log path, ensuring it always points to a writable user directory."""
+        import os
+        p = Path(self.history_file_path)
+        if not p.is_absolute():
+            if Path(".maxi").exists() and os.access(".maxi", os.W_OK) and str(Path(".").resolve()) != "/":
+                return p
+            return Path.home() / ".maxi" / "history.jsonl"
+        return p
 
     def get_mcp_config_file(self) -> Path:
         """Resolves MCP config file looking in .maxi first, then root fallback, then ~/.maxi."""
@@ -180,14 +190,14 @@ class Settings(BaseSettings):
                 return p
 
         candidates = [
-            Path(".maxi/mcp_config.json"),
             Path.home() / ".maxi" / "mcp_config.json",
+            Path(".maxi/mcp_config.json"),
             Path("max_mcp.json"),
         ]
         for p in candidates:
             if p.exists() and p.is_file():
                 return p
-        return Path(".maxi/mcp_config.json")
+        return Path.home() / ".maxi" / "mcp_config.json"
 
     def get_skills_dir(self) -> Path:
         """Resolves skills directory looking in .maxi/skills first, then root skills/, then ~/.maxi/skills."""
@@ -197,14 +207,14 @@ class Settings(BaseSettings):
                 return p
 
         candidates = [
-            Path(".maxi/skills"),
             Path.home() / ".maxi" / "skills",
+            Path(".maxi/skills"),
             Path("skills"),
         ]
         for p in candidates:
             if p.exists() and p.is_dir():
                 return p
-        return Path(".maxi/skills")
+        return Path.home() / ".maxi" / "skills"
 
 
 settings = Settings()
