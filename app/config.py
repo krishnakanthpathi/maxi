@@ -113,14 +113,19 @@ class Settings(BaseSettings):
         description="Ensure voice commands are automatically prefixed with 'Hey Maxi,' when activating the agent"
     )
     wake_word_energy_threshold: float = Field(
-        default=0.015,
+        default=0.008,
         alias="WAKE_WORD_ENERGY_THRESHOLD",
-        description="Microphone RMS energy threshold to trigger voice utterance capture"
+        description="Microphone RMS energy threshold to trigger voice utterance capture (lowered from 0.015 to catch quiet words like 'that')"
     )
     wake_word_silence_duration: float = Field(
-        default=1.0,
+        default=1.8,
         alias="WAKE_WORD_SILENCE_DURATION",
-        description="Silence duration in seconds after speech to finish utterance capture"
+        description="Silence duration in seconds after speech to finish utterance capture (raised from 1.0 to 1.8s for natural clause pauses)"
+    )
+    wake_word_max_duration: float = Field(
+        default=45.0,
+        alias="WAKE_WORD_MAX_DURATION",
+        description="Maximum allowable duration in seconds for a continuous voice utterance"
     )
 
     def get_wake_words_list(self) -> list[str]:

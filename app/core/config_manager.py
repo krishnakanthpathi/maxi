@@ -134,6 +134,16 @@ KEY_ALIASES = {
     "wake-auto-prefix": "WAKE_WORD_AUTO_PREFIX",
     "wake_word_auto_prefix": "WAKE_WORD_AUTO_PREFIX",
     "WAKE_WORD_AUTO_PREFIX": "WAKE_WORD_AUTO_PREFIX",
+
+    "wake-silence": "WAKE_WORD_SILENCE_DURATION",
+    "wake_silence": "WAKE_WORD_SILENCE_DURATION",
+    "wake_word_silence_duration": "WAKE_WORD_SILENCE_DURATION",
+    "WAKE_WORD_SILENCE_DURATION": "WAKE_WORD_SILENCE_DURATION",
+
+    "wake-threshold": "WAKE_WORD_ENERGY_THRESHOLD",
+    "wake_threshold": "WAKE_WORD_ENERGY_THRESHOLD",
+    "wake_word_energy_threshold": "WAKE_WORD_ENERGY_THRESHOLD",
+    "WAKE_WORD_ENERGY_THRESHOLD": "WAKE_WORD_ENERGY_THRESHOLD",
 }
 
 
@@ -294,6 +304,16 @@ def save_config(updates: Dict[str, str], notify_daemon: bool = True) -> Tuple[bo
             settings.wake_words = v
         elif k == "WAKE_WORD_AUTO_PREFIX":
             settings.wake_word_auto_prefix = v.lower() in ("true", "1", "yes")
+        elif k == "WAKE_WORD_SILENCE_DURATION":
+            try:
+                settings.wake_word_silence_duration = float(v)
+            except ValueError:
+                pass
+        elif k == "WAKE_WORD_ENERGY_THRESHOLD":
+            try:
+                settings.wake_word_energy_threshold = float(v)
+            except ValueError:
+                pass
 
     # 2. Write to ~/.maxi/.env
     GLOBAL_ENV_FILE.parent.mkdir(parents=True, exist_ok=True)

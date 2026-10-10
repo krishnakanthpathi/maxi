@@ -269,16 +269,16 @@ class MaxiVoiceService:
     def _wake_word_worker(self):
         """
         Background worker that continuously monitors microphone audio energy (RMS).
-        Detects voice utterances, transcribes speech, and auto-catches "Hey Maxi" / "Hey Siri".
+        Features adaptive noise floor tracking, speech hangover smoothing, and generous
+        conversational pause tolerance (1.8s) so long sentences and words like 'that' are never cut off.
         """
-        pre_roll: Deque[np.ndarray] = deque(maxlen=6)  # ~0.4s pre-speech buffer
+        pre_roll: Deque[np.ndarray] = deque(maxlen=12)  # ~0.75s pre-speech buffer
         speech_chunks: List[np.ndarray] = []
         in_speech = False
         last_speech_time = 0.0
         speech_start_time = 0.0
-
-        silence_threshold = getattr(settings, "wake_word_energy_threshold", 0.015)
-        silence_duration = getattr(settings, "wake_word_silence_duration", 1.0)
+        noise_floor = 0.003
+        silent_frame_count = 0
 
         while self._running:
             try:
@@ -295,32 +295,52 @@ class MaxiVoiceService:
                 pre_roll.clear()
                 speech_chunks.clear()
                 in_speech = False
+                silent_frame_count = 0
                 continue
 
             rms = float(np.sqrt(np.mean(chunk**2))) if np is not None else 0.0
             now = time.time()
 
+            base_threshold = getattr(settings, "wake_word_energy_threshold", 0.008)
+            silence_duration = getattr(settings, "wake_word_silence_duration", 1.8)
+            max_duration = getattr(settings, "wake_word_max_duration", 45.0)
+
             # State A: Listening for speech onset
             if not in_speech:
                 pre_roll.append(chunk)
-                if rms >= silence_threshold:
+                # Adapt ambient noise floor during background silence
+                if rms < base_threshold:
+                    noise_floor = 0.95 * noise_floor + 0.05 * rms
+
+                effective_threshold = max(base_threshold, noise_floor * 2.2)
+                if rms >= effective_threshold:
                     in_speech = True
                     speech_start_time = now
                     last_speech_time = now
+                    silent_frame_count = 0
                     speech_chunks = list(pre_roll)
                     pre_roll.clear()
-            # State B: Gathering utterance
+            # State B: Gathering utterance (active speech)
             else:
                 speech_chunks.append(chunk)
-                if rms >= silence_threshold:
+                effective_threshold = max(base_threshold * 0.85, noise_floor * 1.8)
+
+                if rms >= effective_threshold:
                     last_speech_time = now
+                    silent_frame_count = 0
+                else:
+                    silent_frame_count += 1
+                    # Syllable smoothing: Treat transient dips (<150ms) as part of speech flow
+                    if silent_frame_count <= 2:
+                        last_speech_time = now
 
                 silence_gap = now - last_speech_time
                 total_duration = now - speech_start_time
 
-                # Utterance complete when silence gap met or safety max cap (12s) reached
-                if silence_gap >= silence_duration or total_duration >= 12.0:
+                # Utterance complete when conversational silence gap (1.8s) met or max cap (45s) reached
+                if silence_gap >= silence_duration or total_duration >= max_duration:
                     in_speech = False
+                    silent_frame_count = 0
                     chunks_to_process = list(speech_chunks)
                     speech_chunks.clear()
                     pre_roll.clear()

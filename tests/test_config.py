@@ -25,6 +25,12 @@ class TestWakeWordConfiguration(unittest.TestCase):
         self.assertIn("wake_words", cfg)
         self.assertIn("wake_word_auto_prefix", cfg)
 
+    def test_settings_conversational_thresholds(self):
+        s = Settings()
+        self.assertEqual(s.wake_word_silence_duration, 1.8)
+        self.assertEqual(s.wake_word_energy_threshold, 0.008)
+        self.assertEqual(s.wake_word_max_duration, 45.0)
+
 
 if __name__ == "__main__":
     unittest.main()
