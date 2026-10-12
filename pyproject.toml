@@ -75,4 +75,3 @@ packages = ["app"]
 
 [tool.hatch.build.targets.wheel.sources]
 "app/sounds" = "app/sounds"
-"app/web" = "app/web"

@@ -151,14 +151,6 @@ def cmd_status(args):
     print("💤 Maxi Daemon: STOPPED")
 
 
-def cmd_hud(args):
-    """Open the web HUD in the default browser."""
-    import webbrowser
-    url = "http://127.0.0.1:4848/hud"
-    print(f"🌐 Opening Maxi HUD at {url}...")
-    webbrowser.open(url)
-
-
 def _run_config_wizard():
     from app.core.config_manager import save_config, get_current_config
     cfg = get_current_config()
@@ -589,9 +581,6 @@ def main():
     # status
     subparsers.add_parser("status", help="Check daemon and MCP health")
 
-    # hud
-    subparsers.add_parser("hud", help="Open Maxi HUD in browser")
-
     # tts
     p_tts = subparsers.add_parser("tts", help="List, preview, and configure Siri TTS voices")
     p_tts.add_argument("--test", help="Preview a specific voice aloud")
@@ -662,8 +651,6 @@ def main():
         cmd_restart(args)
     elif args.command == "status":
         cmd_status(args)
-    elif args.command == "hud":
-        cmd_hud(args)
     elif args.command == "tts":
         cmd_tts(args)
     elif args.command == "config":

@@ -49,52 +49,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from pathlib import Path
-from fastapi.responses import HTMLResponse, FileResponse
-
 # Register routes
 app.include_router(api_router, prefix="/api")
 app.include_router(ws_router)
 
 
-@app.get("/favicon.ico")
-@app.get("/favicon.svg")
-@app.get("/icons/favicon.svg")
-async def serve_favicon():
-    candidates = [
-        Path(__file__).resolve().parent / "web" / "icons" / "favicon.svg",
-        Path(__file__).resolve().parent.parent / "frontends" / "web" / "icons" / "favicon.svg",
-    ]
-    for p in candidates:
-        if p.exists():
-            return FileResponse(p, media_type="image/svg+xml")
-    return HTMLResponse("")
-
-
-@app.get("/icons/maxi-icon.svg")
-async def serve_icon():
-    candidates = [
-        Path(__file__).resolve().parent / "web" / "icons" / "maxi-icon.svg",
-        Path(__file__).resolve().parent.parent / "frontends" / "web" / "icons" / "maxi-icon.svg",
-    ]
-    for p in candidates:
-        if p.exists():
-            return FileResponse(p, media_type="image/svg+xml")
-    return HTMLResponse("")
-
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/hud", response_class=HTMLResponse)
-async def serve_hud():
-    """Serves the modern Siri-style desktop HUD frontend."""
-    candidates = [
-        Path(__file__).resolve().parent.parent / "frontends" / "web" / "index.html",
-        Path(__file__).resolve().parent / "web" / "index.html"
-    ]
-    for p in candidates:
-        if p.exists():
-            return FileResponse(p)
-    return HTMLResponse("<h1>Maxi Daemon Live</h1>")
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": settings.app_name, "version": "0.2.0"}
 
 
 if __name__ == "__main__":
