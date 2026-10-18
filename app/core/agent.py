@@ -10,7 +10,7 @@ from langchain_core.tools import BaseTool
 from app.config import settings
 from app.core.skills import skill_registry
 from app.core.mcp_client import mcp_manager
-from app.core.lmem_tools import get_lmem_tools, auto_recall_memories
+from app.core.lmem_tools import get_lmem_tools
 
 logger = logging.getLogger("maxi.agent")
 
@@ -138,10 +138,7 @@ class MaxiAgent:
 
         logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded, {len(self._history)//2} turns in memory)")
 
-        memories_block = auto_recall_memories(prompt)
         prompt_parts = []
-        if memories_block:
-            prompt_parts.append(memories_block)
         if context_block:
             prompt_parts.append(context_block)
         prompt_parts.append(f"User Command: {prompt}")
@@ -282,8 +279,7 @@ class MaxiAgent:
         tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
-        memories_block = auto_recall_memories(prompt)
-        human_content = f"{memories_block}\n\nUser Command: {prompt}" if memories_block else prompt
+        human_content = prompt
 
         messages: List[BaseMessage] = [
             SystemMessage(content=system_instruction),
