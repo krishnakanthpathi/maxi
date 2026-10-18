@@ -528,7 +528,10 @@ class TTSService:
         try:
             proc.wait()
             # Automatic fallback if Kokoro server is unreachable or macOS voice is missing
-            if proc.returncode not in (0, -15, -9) and sys.platform == "darwin" and shutil.which("say"):
+            with self._lock:
+                should_fallback = self._is_speaking and proc.returncode not in (0, -15, -9)
+
+            if should_fallback and sys.platform == "darwin" and shutil.which("say"):
                 siri_fallback_text = translate_expressive_annotations(clean_text, for_kokoro=False)
                 logger.warning(
                     f"TTS voice '{voice}' exited with code {proc.returncode}; falling back to macOS Siri voice."

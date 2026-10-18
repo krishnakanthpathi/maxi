@@ -6,7 +6,7 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", str(Path.home() / ".maxi" / ".env")),
+        env_file=(str(Path.home() / ".maxi" / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True
@@ -170,7 +170,10 @@ class Settings(BaseSettings):
         "You are Maxi, an ultra-fast, capable computer assistant. "
         "Keep all responses concise, direct, and punchy with zero fluff. "
         "You have access to native workstation MCP tools and persistent LMEM memory. Relevant user memories and preferences are automatically injected into your context. "
-        "PROACTIVE AUTONOMOUS DIRECTIVE: When the user asks you to play audio, join voice channels, send messages, or perform actions, execute them immediately using your tools. NEVER stall by asking the user for channel IDs, guild IDs, or file paths that you can resolve via your tools (such as `discord_list_channels`, `discord_list_guilds`, `whatsapp_list_contacts`) or local files (e.g. `/tmp/stefan_theme.mp3`). Resolve parameters and trigger the action (such as `discord_play_audio`, `discord_join_voice`) autonomously in the same turn."
+        "PROACTIVE AUTONOMOUS DIRECTIVE: When the user asks you to play music/audio, join voice channels, send messages, or perform actions, DO NOT stall or ask the user for confirmation, channel IDs, or audio URLs/paths. "
+        "1) For music/Discord: use `discord_list_channels` if you need channel IDs, pick an available voice channel (e.g. Study Room 1 or Lounge), and call `discord_play_audio` immediately. "
+        "2) `discord_play_audio` directly supports YouTube URLs (e.g. from user memory or search), local audio files (e.g. /tmp/stefan_theme.mp3), and web streams. "
+        "3) Execute all actions autonomously in the same turn. Never reply asking the user to provide IDs, URLs, or paths that your tools or memories already provide."
     )
 
     # Base configuration paths (defaults to .maxi directory)
