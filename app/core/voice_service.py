@@ -906,12 +906,31 @@ class MaxiVoiceService:
     # =========================================================================
 
     def _on_press(self, key):
-        # 1. Escape key immediately cancels active recording (`onCancelKeyPress`)
-        if self.is_ptt_recording and self._is_esc(key):
-            self.right_option_pressed = False
-            self.ctrl_pressed = False
-            self.space_pressed = False
-            self.cancel_recording(reason="esc")
+        # 1. Escape key handling (`onCancelKeyPress`):
+        #    - If recording: cancel recording immediately
+        #    - If in-flight agent processing: cancel running future
+        #    - If TTS speaking: stop speech immediately
+        #    - Always broadcast `hud_dismiss` to close any visible HUD toast/pop-up
+        if self._is_esc(key):
+            if self.is_ptt_recording:
+                self.right_option_pressed = False
+                self.ctrl_pressed = False
+                self.space_pressed = False
+                self.cancel_recording(reason="esc")
+                return
+
+            if self._active_future is not None and not self._active_future.done():
+                try:
+                    self._active_future.cancel()
+                except Exception:
+                    pass
+                self._broadcast({"event": "voice_stop", "cancelled": True, "reason": "esc"})
+                self._broadcast({"event": "voice_idle"})
+
+            if tts_service.is_speaking:
+                tts_service.stop()
+
+            self._broadcast({"event": "hud_dismiss"})
             return
 
         was_already_active = self._is_hotkey_active()

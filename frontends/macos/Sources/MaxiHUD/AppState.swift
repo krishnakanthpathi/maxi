@@ -245,6 +245,9 @@ final class AppState: ObservableObject {
         dismissTask?.cancel()
         currentExecutingTool = nil
         activeToolsList = []
+        if mode == .speaking {
+            WebSocketClient.shared.stopTTS()
+        }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
             showToast = false
             mode = .idle

@@ -22,6 +22,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBarMenu()
         WebSocketClient.shared.start()
 
+        // Global and local Escape monitoring to immediately close toast pop-up and stop TTS
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // Escape key
+                if AppState.shared.showToast || AppState.shared.mode == .speaking {
+                    AppState.shared.dismissToast()
+                    return nil
+                }
+            }
+            return event
+        }
+
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {
+                Task { @MainActor in
+                    if AppState.shared.showToast || AppState.shared.mode == .speaking {
+                        AppState.shared.dismissToast()
+                    }
+                }
+            }
+        }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,

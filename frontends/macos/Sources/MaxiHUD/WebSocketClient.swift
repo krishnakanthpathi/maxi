@@ -142,6 +142,9 @@ final class WebSocketClient {
         case "voice_idle":
             state.handleVoiceIdle()
 
+        case "hud_dismiss":
+            state.dismissToast()
+
         default:
             break
         }
