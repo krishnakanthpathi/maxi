@@ -49,9 +49,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"error": "Missing 'text' or 'prompt' in payload"})
                     continue
 
+                async def ws_tool_start(tool_name: str, args: dict):
+                    await websocket.send_json({"event": "tool_start", "tool": tool_name, "args": args if isinstance(args, dict) else {}})
+
+                async def ws_tool_end(tool_name: str, result: str):
+                    await websocket.send_json({"event": "tool_end", "tool": tool_name})
+
                 # Stream response
                 await websocket.send_json({"event": "start", "source": source})
-                async for chunk in agent.run_stream(prompt, source=source):
+                async for chunk in agent.run_stream(
+                    prompt,
+                    source=source,
+                    on_tool_start=ws_tool_start,
+                    on_tool_end=ws_tool_end,
+                ):
                     await websocket.send_json({"event": "chunk", "data": chunk})
                 
                 await websocket.send_json({"event": "done"})

@@ -6,12 +6,13 @@ Provides direct, first-class LangChain tool interfaces to the local LMEM engine:
 - lmem_remember: Explicitly persist confirmed user facts.
 """
 
+import json
 import os
 import shutil
 import subprocess
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from langchain_core.tools import tool, BaseTool
 
 logger = logging.getLogger("maxi.lmem")
@@ -89,6 +90,37 @@ def lmem_remember(content: str) -> str:
     clean_content = content.strip().strip("'\"")
     logger.info(f"🧠 Persisting memory to LMEM: \"{clean_content}\"")
     return _run_lmem(["remember", clean_content])
+
+
+def auto_recall_memories(prompt: str, limit: int = 2, min_score: float = 0.35) -> str:
+    """
+    Fast pre-flight LightMem hybrid vector/keyword search.
+    Returns a formatted <relevant_memories> block for top matches, or empty string.
+    Runs in ~20ms without burning any LLM tool turns.
+    """
+    clean = prompt.strip().strip("'\"")
+    if not clean or len(clean) < 3:
+        return ""
+    try:
+        raw_json = _run_lmem(["recall", clean, "--limit", str(limit), "--global", "--json"], timeout_s=1.5)
+        if not raw_json or not raw_json.startswith("["):
+            return ""
+        items = json.loads(raw_json)
+        if not isinstance(items, list):
+            return ""
+        hits = []
+        for item in items:
+            score = item.get("score", 0.0)
+            mem = item.get("memory", {})
+            content = mem.get("content", "").strip()
+            cat = mem.get("category", "memory")
+            if score >= min_score and content:
+                hits.append(f"- [{cat}] {content}")
+        if hits:
+            return "<relevant_memories>\n" + "\n".join(hits) + "\n</relevant_memories>"
+    except Exception as e:
+        logger.debug(f"Auto-recall memory hook failed: {e}")
+    return ""
 
 
 def get_lmem_tools() -> List[BaseTool]:

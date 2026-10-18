@@ -281,4 +281,69 @@ async def stop_tts():
     return {"status": "stopped"}
 
 
+class GlossaryTermRequest(BaseModel):
+    term: str = Field(..., description="Domain term or spoken phrase")
+    replacement: Optional[str] = Field(None, description="Optional replacement text (if omitted, adds to vocabulary terms)")
+
+
+class TextInjectRequest(BaseModel):
+    text: str = Field(..., description="Text to inject at the active OS cursor position")
+    preserve_clipboard: bool = Field(True, description="Whether to restore prior clipboard contents after pasting")
+
+
+@router.get("/glossary")
+async def get_glossary():
+    """Retrieve custom vocabulary terms and automatic spoken-to-written replacements."""
+    from app.core.glossary import glossary_manager
+    data = glossary_manager.list_all()
+    return {
+        "terms": data["terms"],
+        "replacements": data["replacements"],
+        "whisper_prompt": glossary_manager.build_whisper_prompt(),
+    }
+
+
+@router.post("/glossary")
+async def add_glossary_item(request: GlossaryTermRequest):
+    """Add a vocabulary term or spoken-to-written replacement to ~/.maxi/glossary.json."""
+    from app.core.glossary import glossary_manager
+    if request.replacement is not None:
+        data = glossary_manager.add_replacement(request.term, request.replacement)
+    else:
+        data = glossary_manager.add_term(request.term)
+    return {"status": "updated", "glossary": data}
+
+
+@router.delete("/glossary")
+async def delete_glossary_item(term: str = Query(..., description="Term or replacement key to remove")):
+    """Remove a vocabulary term or replacement from ~/.maxi/glossary.json."""
+    from app.core.glossary import glossary_manager
+    removed_term = glossary_manager.remove_term(term)
+    removed_rep = glossary_manager.remove_replacement(term)
+    if not removed_term and not removed_rep:
+        raise HTTPException(status_code=404, detail=f"Term '{term}' not found in glossary")
+    return {"status": "removed", "term": term, "glossary": glossary_manager.list_all()}
+
+
+@router.get("/context")
+async def get_focused_context(live: bool = Query(False, description="Capture fresh context immediately")):
+    """Retrieve the last captured key-down context or capture live focused app/window/selection context."""
+    from app.core.context_capture import context_capturer
+    ctx = context_capturer.capture() if live else (context_capturer.last_context or context_capturer.capture())
+    return {
+        "context": ctx.to_dict(),
+        "prompt_block": ctx.to_prompt_block(),
+        "proper_nouns": ctx.extract_proper_nouns(),
+    }
+
+
+@router.post("/inject")
+async def inject_text_endpoint(request: TextInjectRequest):
+    """Inject text directly into the currently focused macOS text field while preserving clipboard."""
+    from app.core.text_injector import text_injector
+    ok = text_injector.inject_text(request.text, preserve_clipboard=request.preserve_clipboard)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Text injection failed or empty text provided")
+    return {"status": "injected", "length": len(request.text)}
+
 

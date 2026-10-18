@@ -41,7 +41,8 @@ def cmd_run(args):
             host=settings.host,
             port=settings.port,
             reload=args.reload or settings.debug,
-            log_level="info"
+            log_level="info",
+            timeout_graceful_shutdown=2,
         )
     finally:
         PID_FILE.unlink(missing_ok=True)
@@ -75,12 +76,16 @@ def cmd_start(args):
     else:
         kwargs["start_new_session"] = True
 
+    env = dict(os.environ)
+    env["MAXI_DAEMON_REDIRECTED"] = "1"
+
     py_exe = get_python_exe()
     with open(log_file, "a") as log_out:
         proc = subprocess.Popen(
             [py_exe, "-m", "app.cli", "run"],
             stdout=log_out,
             stderr=log_out,
+            env=env,
             **kwargs
         )
 
@@ -244,61 +249,62 @@ def _run_config_wizard():
 
 
 def _print_available_voices(preview_voice: str = None):
-    """Display all Siri TTS presets and installed macOS voices."""
+    """Display all Kokoro Neural TTS and Siri TTS presets."""
     from app.core.config_manager import get_current_config
     from app.core.tts import (
+        KOKORO_VOICE_PRESETS, KOKORO_VOICE_ALIASES,
         SIRI_VOICE_PRESETS, SIRI_VOICE_ALIASES,
-        resolve_siri_voice, tts_service
+        is_kokoro_voice, resolve_siri_voice, tts_service
     )
 
     cfg = get_current_config()
-    active_raw = cfg.get("tts_voice", "Tara")
+    active_raw = cfg.get("tts_voice", "af_heart")
     active_resolved = resolve_siri_voice(active_raw)
     tts_enabled = cfg.get("enable_tts", True)
     tts_rate = cfg.get("tts_rate", 190)
+    tts_url = cfg.get("tts_base_url", "http://100.75.149.115:8880/v1")
+    engine_label = f"Kokoro Neural TTS ({tts_url})" if is_kokoro_voice(active_resolved) else "macOS Native Siri TTS"
 
-    print("\n🔊 Maxi Siri TTS Voices")
-    print("━" * 64)
+    print("\n🔊 Maxi Expressive TTS Voices (Kokoro Neural + Siri Fallback)")
+    print("━" * 70)
+    print(f"Active Engine: {engine_label}")
     print(f"Active Voice:  {active_resolved} (Configured: '{active_raw}', Rate: {tts_rate} WPM, {'Enabled' if tts_enabled else 'Disabled'})")
     print("")
-    print("🌟 Recommended Siri Voice Presets:")
+    print("🎭 Recommended Kokoro Neural Voices (Linux HP Server):")
+    for key, info in KOKORO_VOICE_PRESETS.items():
+        marker = "✅ (Active)" if info["voice"].lower() == active_resolved.lower() else ""
+        print(f"  • {key:<10} -> {info['name']:<34} [{info['locale']}] {marker}")
+
+    print("\n✨ Expressive Voice Annotations (Supported in Kokoro & Voice Replies):")
+    print("  • Appraisals:  \"Oh, I got it! [pause:0.15s]\" | \"Aha, right!\"")
+    print("  • Reactions:   [laugh]  [chuckle]  [giggle]  [sigh]  [gasp]  [hmm]  [uhm]")
+    print("  • Pacing/Beat: [pause]  [pause:0.3s]  [excited]  [thoughtful]  [slow]")
+    print("  • Blending:    af_heart(2)+af_bella(1)  (alias: 'blend')")
+
+    print("\n🍎 Apple Siri Fallback Presets:")
     for key, info in SIRI_VOICE_PRESETS.items():
         marker = "✅ (Active)" if info["voice"].lower() == active_resolved.lower() else ""
         print(f"  • {key:<10} -> {info['voice']:<10} [{info['locale']}]  {info['description']} {marker}")
 
-    print("\n🏷️  Quick Aliases:")
-    print("  siri / siri-in -> Tara   | siri-us -> Samantha | siri-uk -> Daniel")
-    print("  siri-au        -> Karen  | siri-ie -> Moira    | rishi / aman")
-
-    installed = tts_service.list_available_voices()
-    if installed:
-        print(f"\n🍎 All Installed macOS English Voices ({len(installed)} available):")
-        for v in installed:
-            v_base = v["name"].split("(")[0].strip().lower()
-            is_act = "✅" if v_base == active_resolved.lower() or v["name"].lower() == active_resolved.lower() else "  "
-            print(f"  {is_act} {v['name']:<26} [{v['locale']}]  \"{v['sample']}\"")
-
-    print("━" * 64)
+    print("━" * 70)
     print("How to change or test TTS voice:")
-    print("  • Change voice:       maxi config set tts-voice samantha")
-    print("                        maxi config --tts-voice daniel")
-    print("                        maxi tts set tara")
-    print("  • Change speed (WPM): maxi config set tts-rate 195")
-    print("  • Toggle TTS on/off:  maxi config set tts true/false")
-    print("  • Preview a voice:    maxi tts test samantha")
+    print("  • Use Kokoro Heart:   maxi tts set kokoro   (or: maxi tts set af_heart)")
+    print("  • Use Kokoro Bella:   maxi tts set bella    (or: maxi tts set af_bella)")
+    print("  • Use Apple Siri:     maxi tts set tara     (or: maxi tts set samantha)")
+    print("  • Test expressive:    maxi tts test af_heart \"Oh, I got it! [laugh] That works great!\"")
     print("")
 
     if preview_voice:
         resolved = resolve_siri_voice(preview_voice)
-        sample_text = f"Hello! I am Maxi, speaking with the {resolved} voice."
+        sample_text = f"Oh, I got it! [chuckle] I am Maxi, speaking with the {resolved} voice."
         print(f"🔊 Previewing '{resolved}' ({tts_rate} WPM): \"{sample_text}\"")
         tts_service.speak(sample_text, voice=resolved, rate=tts_rate, block=True)
 
 
 def cmd_tts(args):
-    """Manage and preview Siri TTS voices directly from the terminal."""
+    """Manage and preview Kokoro & Siri TTS voices directly from the terminal."""
     from app.core.config_manager import save_config
-    from app.core.tts import resolve_siri_voice, tts_service
+    from app.core.tts import is_kokoro_voice, resolve_siri_voice, tts_service
 
     action = getattr(args, "tts_action", None) or "voices"
     if action == "voices":
@@ -309,27 +315,32 @@ def cmd_tts(args):
             print("Usage: maxi tts set <voice_name>")
             return
         resolved = resolve_siri_voice(voice_val)
-        updates = {"TTS_VOICE": resolved, "ENABLE_TTS": "true"}
+        provider = "kokoro" if is_kokoro_voice(resolved) else "siri"
+        updates = {"TTS_VOICE": resolved, "TTS_PROVIDER": provider, "ENABLE_TTS": "true"}
         if getattr(args, "rate", None):
             updates["TTS_RATE"] = str(args.rate)
         _, msg = save_config(updates)
-        print(f"✅ Switched Siri TTS voice to: {resolved}")
+        print(f"✅ Switched TTS voice to: {resolved} ({provider.upper()})")
         print(f"📜 {msg}")
         if not getattr(args, "no_preview", False):
-            tts_service.speak(f"Hi, I'm Maxi using the {resolved} voice.", voice=resolved, block=True)
+            sample = f"Oh, I got it! [chuckle] Hi, I'm Maxi using the {resolved} voice."
+            tts_service.speak(sample, voice=resolved, block=True)
     elif action == "test":
         voice_val = getattr(args, "voice_name", None)
         resolved = resolve_siri_voice(voice_val)
-        text = getattr(args, "text", None) or f"Hello! I am Maxi speaking with the {resolved} voice."
+        text = (
+            getattr(args, "text", None)
+            or f"Oh, I got it! [laugh] Hello, I am Maxi speaking with the {resolved} voice."
+        )
         print(f"🔊 Testing TTS voice '{resolved}': \"{text}\"")
         tts_service.speak(text, voice=resolved, block=True)
     elif action == "on":
         _, msg = save_config({"ENABLE_TTS": "true"})
-        print("✅ Siri TTS enabled.")
+        print("✅ TTS enabled.")
         print(f"📜 {msg}")
     elif action == "off":
         _, msg = save_config({"ENABLE_TTS": "false"})
-        print("🔇 Siri TTS disabled.")
+        print("🔇 TTS disabled.")
         print(f"📜 {msg}")
     else:
         _print_available_voices()
@@ -341,7 +352,11 @@ def cmd_config(args):
         get_current_config, save_config, PRESETS, VOICE_PRESETS,
         KEY_ALIASES, mask_secret
     )
-    from app.core.tts import SIRI_VOICE_PRESETS, SIRI_VOICE_ALIASES, resolve_siri_voice
+    from app.core.tts import (
+        KOKORO_VOICE_PRESETS, KOKORO_VOICE_ALIASES,
+        SIRI_VOICE_PRESETS, SIRI_VOICE_ALIASES,
+        is_kokoro_voice, resolve_siri_voice
+    )
 
     # 0. Voices subcommand
     if getattr(args, "config_action", None) == "voices" or getattr(args, "list_voices", False):
@@ -402,15 +417,25 @@ def cmd_config(args):
             print(f"   Key:   {mask_secret(updates['VOICE_API_KEY'])}")
             print(f"📜 {msg}")
             return
-        elif preset_name in SIRI_VOICE_PRESETS or preset_name in SIRI_VOICE_ALIASES:
+        elif (
+            preset_name in SIRI_VOICE_PRESETS
+            or preset_name in SIRI_VOICE_ALIASES
+            or preset_name in KOKORO_VOICE_PRESETS
+            or preset_name in KOKORO_VOICE_ALIASES
+        ):
             resolved = resolve_siri_voice(preset_name)
-            p_info = SIRI_VOICE_PRESETS.get(resolved.lower(), {"name": resolved, "locale": "en"})
+            p_info = KOKORO_VOICE_PRESETS.get(
+                resolved.lower(),
+                SIRI_VOICE_PRESETS.get(resolved.lower(), {"name": resolved, "locale": "en"}),
+            )
+            provider = "kokoro" if is_kokoro_voice(resolved) else "siri"
             updates = {
                 "TTS_VOICE": resolved,
+                "TTS_PROVIDER": provider,
                 "ENABLE_TTS": "true",
             }
             _, msg = save_config(updates)
-            print(f"✅ Switched Siri TTS voice preset to {p_info.get('name', resolved)}:")
+            print(f"✅ Switched TTS voice preset to {p_info.get('name', resolved)}:")
             print(f"   Voice:  {resolved} ({p_info.get('locale', 'en')})")
             print(f"📜 {msg}")
             return
@@ -418,6 +443,7 @@ def cmd_config(args):
             print(f"❌ Unknown preset '{preset_name}'.")
             print(f"   Available LLM presets:      {', '.join(PRESETS.keys())}")
             print(f"   Available Voice presets:    {', '.join(VOICE_PRESETS.keys())}")
+            print(f"   Available Kokoro voices:    {', '.join(KOKORO_VOICE_PRESETS.keys())}")
             print(f"   Available Siri TTS presets: {', '.join(SIRI_VOICE_PRESETS.keys())}")
             return
 
@@ -440,7 +466,9 @@ def cmd_config(args):
             "VOICE_AUTO_ENDPOINT": cfg["auto_endpoint"],
             "ENABLE_VOICE_HOTKEY": cfg["hotkey_enabled"],
             "ENABLE_TTS": cfg.get("enable_tts", True),
-            "TTS_VOICE": cfg.get("tts_voice", "Tara"),
+            "TTS_PROVIDER": cfg.get("tts_provider", "kokoro"),
+            "TTS_BASE_URL": cfg.get("tts_base_url", "http://100.75.149.115:8880/v1"),
+            "TTS_VOICE": cfg.get("tts_voice", "af_heart"),
             "TTS_RATE": cfg.get("tts_rate", 190),
             "TTS_SPEAK_ALL_SOURCES": cfg.get("tts_speak_all_sources", False),
             "AGENT_TIMEOUT_SECONDS": cfg.get("agent_timeout_seconds", 90.0),
@@ -456,6 +484,7 @@ def cmd_config(args):
         if not k or v is None:
             print("Usage: maxi config set <key> <value>")
             print("Examples:")
+            print("  maxi config set tts-voice af_heart")
             print("  maxi config set tts-voice samantha")
             print("  maxi config set tts-rate 190")
             print("  maxi config set tts true")
@@ -464,9 +493,12 @@ def cmd_config(args):
             print("  maxi config set voice-key gsk_...")
             return
         canonical = KEY_ALIASES.get(k.lower(), k)
+        updates = {canonical: v}
         if canonical == "TTS_VOICE":
             v = resolve_siri_voice(v)
-        _, msg = save_config({canonical: v})
+            updates[canonical] = v
+            updates["TTS_PROVIDER"] = "kokoro" if is_kokoro_voice(v) else "siri"
+        _, msg = save_config(updates)
         disp_val = mask_secret(v) if "KEY" in canonical.upper() else v
         print(f"✅ Set {canonical} = {disp_val}")
         print(f"📜 {msg}")
@@ -487,7 +519,9 @@ def cmd_config(args):
     if getattr(args, "voice_model", None):
         flag_updates["VOICE_MODEL"] = args.voice_model
     if getattr(args, "tts_voice", None):
-        flag_updates["TTS_VOICE"] = resolve_siri_voice(args.tts_voice)
+        resolved_v = resolve_siri_voice(args.tts_voice)
+        flag_updates["TTS_VOICE"] = resolved_v
+        flag_updates["TTS_PROVIDER"] = "kokoro" if is_kokoro_voice(resolved_v) else "siri"
     if getattr(args, "tts_rate", None) is not None:
         flag_updates["TTS_RATE"] = str(args.tts_rate)
     if getattr(args, "tts", None) is not None:
@@ -512,10 +546,18 @@ def cmd_config(args):
     llm_preset_info = PRESETS.get(cfg["llm_preset"], {}).get("name", "Custom Endpoint")
     voice_preset_info = VOICE_PRESETS.get(cfg["voice_preset"], {}).get("name", "Custom STT")
 
-    tts_voice_raw = cfg.get("tts_voice", "Tara")
+    tts_voice_raw = cfg.get("tts_voice", "af_heart")
     tts_voice_resolved = resolve_siri_voice(tts_voice_raw)
-    tts_preset_meta = SIRI_VOICE_PRESETS.get(tts_voice_resolved.lower(), {})
-    tts_voice_label = tts_preset_meta.get("name", f"{tts_voice_resolved} (macOS Voice)")
+    use_kokoro = is_kokoro_voice(tts_voice_resolved)
+    tts_preset_meta = (
+        KOKORO_VOICE_PRESETS.get(tts_voice_resolved.lower(), {})
+        if use_kokoro
+        else SIRI_VOICE_PRESETS.get(tts_voice_resolved.lower(), {})
+    )
+    tts_voice_label = tts_preset_meta.get(
+        "name",
+        f"{tts_voice_resolved} ({'Kokoro Neural' if use_kokoro else 'macOS Siri'})",
+    )
 
     print("\n⚡ Maxi Configuration")
     print("━" * 58)
@@ -529,9 +571,12 @@ def cmd_config(args):
     print(f"   Model:               {cfg['voice_model']}")
     print(f"   API Key:             {cfg['voice_key_masked']}")
     print("")
-    print(f"🔊 Siri TTS Output:     {'Active' if cfg.get('enable_tts', True) else 'Disabled'}")
+    print(f"🔊 TTS Voice Engine:    {'Kokoro Neural TTS' if use_kokoro else 'Apple Siri TTS'} ({'Active' if cfg.get('enable_tts', True) else 'Disabled'})")
+    if use_kokoro:
+        print(f"   Endpoint URL:        {cfg.get('tts_base_url', 'http://100.75.149.115:8880/v1')}")
     print(f"   Active Voice:        {tts_voice_resolved} — {tts_voice_label}")
     print(f"   Speech Rate:         {cfg.get('tts_rate', 190)} WPM")
+    print(f"   Kokoro Presets:      heart, bella, nicole, fenrir, michael, puck, emma, fable")
     print(f"   Siri Presets:        {', '.join(SIRI_VOICE_PRESETS.keys())}")
     print("")
     hotkey_pref = (cfg.get("voice_hotkey") or "auto").lower()
@@ -549,13 +594,146 @@ def cmd_config(args):
     print("━" * 58)
     print("Commands:")
     print("  • List all TTS voices:        maxi config voices  (or: maxi tts)")
-    print("  • Change Siri TTS voice:      maxi config set tts-voice <tara|samantha|daniel|karen|moira|rishi|aman>")
+    print("  • Switch TTS voice:           maxi tts set <kokoro|bella|fenrir|emma|tara|samantha>")
     print("  • Preview a TTS voice:        maxi tts test <voice>")
-    print("  • Change TTS speed (WPM):     maxi config set tts-rate 190")
-    print("  • Toggle TTS on/off:          maxi config set tts true/false")
+    print("  • Manage custom vocabulary:   maxi glossary list | add <term> [replacement]")
+    print("  • Launch floating macOS HUD:  maxi hud")
     print("  • Switch LLM preset:          maxi config preset <ollama|groq|openrouter>")
     print("  • Interactive wizard:         maxi config wizard")
     print("")
+
+
+def cmd_glossary(args):
+    """Manage Willow-style custom vocabulary terms and spoken replacements."""
+    from app.core.glossary import glossary_manager
+
+    action = getattr(args, "glossary_action", None) or "list"
+    if action == "add":
+        term = getattr(args, "term", None)
+        replacement = getattr(args, "replacement", None)
+        if not term:
+            print("Usage: maxi glossary add <term> [replacement]")
+            return
+        if replacement:
+            glossary_manager.add_replacement(term, replacement)
+            print(f"✅ Added glossary replacement: '{term}' -> '{replacement}'")
+        else:
+            glossary_manager.add_term(term)
+            print(f"✅ Added vocabulary term: '{term}'")
+    elif action == "remove":
+        term = getattr(args, "term", None)
+        if not term:
+            print("Usage: maxi glossary remove <term>")
+            return
+        r1 = glossary_manager.remove_term(term)
+        r2 = glossary_manager.remove_replacement(term)
+        if r1 or r2:
+            print(f"🗑️  Removed '{term}' from glossary.")
+        else:
+            print(f"ℹ️  '{term}' was not found in glossary.")
+    else:
+        data = glossary_manager.list_all()
+        terms = data.get("terms", [])
+        replacements = data.get("replacements", {})
+        print("\n📖 Maxi Custom Vocabulary & Glossary (~/.maxi/glossary.json)")
+        print("━" * 60)
+        print(f"Vocabulary Terms ({len(terms)}):")
+        if terms:
+            print("  " + ", ".join(terms))
+        else:
+            print("  (none)")
+        print(f"\nSpoken -> Written Replacements ({len(replacements)}):")
+        if replacements:
+            for k, v in replacements.items():
+                print(f"  • \"{k}\" -> \"{v}\"")
+        else:
+            print("  (none)")
+        print("━" * 60)
+        print("Usage:")
+        print("  • Add domain term:       maxi glossary add \"LangGraph\"")
+        print("  • Add auto-replacement:  maxi glossary add \"my github\" \"https://github.com/krishnakanth\"")
+        print("  • Remove entry:          maxi glossary remove \"LangGraph\"")
+        print("")
+
+
+HUD_PID_FILE = Path.home() / ".maxi" / "hud.pid"
+
+
+def cmd_hud(args):
+    """Build and launch the native macOS Willow-style Floating Pill HUD."""
+    if sys.platform != "darwin":
+        print("⚠️  The native Cocoa Floating HUD is only supported on macOS.")
+        return
+
+    action = getattr(args, "hud_action", None) or "start"
+    if action == "stop":
+        if HUD_PID_FILE.exists():
+            try:
+                pid = int(HUD_PID_FILE.read_text().strip())
+                os.kill(pid, signal.SIGTERM)
+                print(f"🛑 Stopped Maxi HUD (PID: {pid}).")
+            except (ValueError, OSError):
+                print("ℹ️  HUD process was not running.")
+            finally:
+                HUD_PID_FILE.unlink(missing_ok=True)
+        else:
+            subprocess.run(["pkill", "-f", "MaxiHUD"], check=False)
+            print("🛑 Stopped Maxi HUD.")
+        return
+
+    macos_dir = Path(__file__).resolve().parent.parent / "frontends" / "macos"
+    if not macos_dir.exists():
+        print(f"❌ macOS HUD directory not found at {macos_dir}")
+        return
+
+    release_bin = macos_dir / ".build" / "release" / "MaxiHUD"
+    debug_bin = macos_dir / ".build" / "debug" / "MaxiHUD"
+
+    binary = release_bin if release_bin.exists() else (debug_bin if debug_bin.exists() else None)
+    if action == "build" or binary is None or getattr(args, "rebuild", False):
+        print("🔨 Building native macOS MaxiHUD (SwiftUI + AppKit NSPanel)...")
+        res = subprocess.run(["swift", "build", "-c", "release"], cwd=str(macos_dir))
+        if res.returncode != 0:
+            print("❌ Failed to build MaxiHUD.")
+            return
+        binary = release_bin
+        print(f"✅ Built MaxiHUD binary: {binary}")
+        if action == "build":
+            return
+
+    # Stop existing HUD if running
+    if HUD_PID_FILE.exists():
+        try:
+            old_pid = int(HUD_PID_FILE.read_text().strip())
+            os.kill(old_pid, signal.SIGTERM)
+        except Exception:
+            pass
+        HUD_PID_FILE.unlink(missing_ok=True)
+
+    if getattr(args, "foreground", False) or action == "run":
+        print("✨ Running MaxiHUD in foreground (Ctrl+C to close)...")
+        HUD_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        HUD_PID_FILE.write_text(str(os.getpid()))
+        try:
+            subprocess.run([str(binary)])
+        except KeyboardInterrupt:
+            pass
+        finally:
+            HUD_PID_FILE.unlink(missing_ok=True)
+    else:
+        HUD_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        hud_log = HUD_PID_FILE.parent / "hud.log"
+        with open(hud_log, "a") as out:
+            proc = subprocess.Popen(
+                [str(binary)],
+                stdout=out,
+                stderr=out,
+                start_new_session=True,
+            )
+        HUD_PID_FILE.write_text(str(proc.pid))
+        print(f"✨ Maxi Floating HUD launched (PID: {proc.pid})")
+        print("   • Hold Right Option (⌥) to speak, or double-tap Right Option for hands-free lock")
+        print("   • Press Esc while recording to cancel")
 
 
 def main():
@@ -580,6 +758,22 @@ def main():
 
     # status
     subparsers.add_parser("status", help="Check daemon and MCP health")
+
+    # hud
+    p_hud = subparsers.add_parser("hud", help="Launch or manage the native macOS Willow-style Floating HUD")
+    p_hud.add_argument("hud_action", nargs="?", choices=["start", "stop", "run", "build"], default="start", help="HUD action")
+    p_hud.add_argument("--foreground", "-f", action="store_true", help="Run HUD in foreground")
+    p_hud.add_argument("--rebuild", action="store_true", help="Force rebuild Swift binary before launching")
+
+    # glossary
+    p_gloss = subparsers.add_parser("glossary", help="Manage custom STT vocabulary terms and spoken replacements")
+    gloss_sub = p_gloss.add_subparsers(dest="glossary_action", help="Glossary action")
+    gloss_sub.add_parser("list", help="List all glossary terms and replacements")
+    p_gloss_add = gloss_sub.add_parser("add", help="Add a vocabulary term or spoken->written replacement")
+    p_gloss_add.add_argument("term", help="Term or spoken phrase")
+    p_gloss_add.add_argument("replacement", nargs="?", default=None, help="Optional replacement string")
+    p_gloss_rem = gloss_sub.add_parser("remove", help="Remove a term or replacement")
+    p_gloss_rem.add_argument("term", help="Term to remove")
 
     # tts
     p_tts = subparsers.add_parser("tts", help="List, preview, and configure Siri TTS voices")
@@ -651,6 +845,10 @@ def main():
         cmd_restart(args)
     elif args.command == "status":
         cmd_status(args)
+    elif args.command == "hud":
+        cmd_hud(args)
+    elif args.command == "glossary":
+        cmd_glossary(args)
     elif args.command == "tts":
         cmd_tts(args)
     elif args.command == "config":
@@ -661,5 +859,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

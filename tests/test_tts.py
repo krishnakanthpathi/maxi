@@ -4,7 +4,9 @@ from unittest.mock import patch, MagicMock
 from app.config import settings
 from app.core.tts import (
     clean_text_for_tts,
+    is_kokoro_voice,
     resolve_siri_voice,
+    translate_expressive_annotations,
     TTSService,
 )
 from app.core.config_manager import KEY_ALIASES, get_current_config
@@ -32,6 +34,21 @@ class TestTTSSanitizer(unittest.TestCase):
         cleaned = clean_text_for_tts(raw)
         self.assertEqual(cleaned, "Done. All set.")
 
+    def test_expressive_annotations_for_kokoro_and_siri(self):
+        raw = "Oh, I got it! [laugh] [hmm] Let's check that [pause] right now."
+        cleaned = clean_text_for_tts(raw, preserve_annotations=True)
+        kokoro_out = translate_expressive_annotations(cleaned, for_kokoro=True)
+        self.assertIn("Oh, I got it! [pause:0.15s]", kokoro_out)
+        self.assertIn("[Haha](/həhˈɑː/)!", kokoro_out)
+        self.assertIn("[Hmm](/hˈmː/)...", kokoro_out)
+        self.assertIn("[pause:0.3s]", kokoro_out)
+
+        siri_out = translate_expressive_annotations(cleaned, for_kokoro=False)
+        self.assertNotIn("[pause", siri_out)
+        self.assertNotIn("[laugh]", siri_out)
+        self.assertIn("Haha!", siri_out)
+        self.assertIn("Hmm...", siri_out)
+
 
 class TestSiriVoiceResolution(unittest.TestCase):
     def test_voice_aliases(self):
@@ -40,7 +57,13 @@ class TestSiriVoiceResolution(unittest.TestCase):
         self.assertEqual(resolve_siri_voice("siri-us"), "Samantha")
         self.assertEqual(resolve_siri_voice("siri-uk"), "Daniel")
         self.assertEqual(resolve_siri_voice("siri-au"), "Karen")
+        self.assertEqual(resolve_siri_voice("kokoro"), "af_heart")
+        self.assertEqual(resolve_siri_voice("cucuru"), "af_heart")
+        self.assertEqual(resolve_siri_voice("bella"), "af_bella")
         self.assertEqual(resolve_siri_voice("CustomVoice"), "CustomVoice")
+        self.assertTrue(is_kokoro_voice("af_heart"))
+        self.assertTrue(is_kokoro_voice("af_heart(2)+af_bella(1)"))
+        self.assertFalse(is_kokoro_voice("Tara"))
 
 
 class TestTTSServiceExecution(unittest.TestCase):
@@ -70,6 +93,26 @@ class TestTTSServiceExecution(unittest.TestCase):
         finally:
             settings.enable_tts = orig_enable
 
+    @patch("subprocess.Popen")
+    def test_speak_invokes_kokoro_stream_worker(self, mock_popen):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        svc = TTSService()
+        orig_enable = settings.enable_tts
+        try:
+            settings.enable_tts = True
+            spoken = svc.speak("Oh, I got it! [laugh] All set.", voice="kokoro", rate=190, block=True)
+            self.assertEqual(spoken, "Oh, I got it! [laugh] All set.")
+            mock_popen.assert_called_once()
+            cmd = mock_popen.call_args[0][0]
+            self.assertEqual(cmd[4], "af_heart")
+            self.assertIn("[Haha](/həhˈɑː/)!", cmd[6])
+        finally:
+            settings.enable_tts = orig_enable
+
     def test_stop_terminates_active_process(self):
         svc = TTSService()
         mock_proc = MagicMock()
@@ -86,6 +129,7 @@ class TestTTSServiceExecution(unittest.TestCase):
         self.assertEqual(KEY_ALIASES.get("tts-voice"), "TTS_VOICE")
         self.assertEqual(KEY_ALIASES.get("siri-voice"), "TTS_VOICE")
         self.assertEqual(KEY_ALIASES.get("tts-rate"), "TTS_RATE")
+        self.assertEqual(KEY_ALIASES.get("tts-url"), "TTS_BASE_URL")
         cfg = get_current_config()
         self.assertIn("enable_tts", cfg)
         self.assertIn("tts_voice", cfg)

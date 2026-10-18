@@ -5,7 +5,33 @@
       "args": [
         "/Users/krishnakanth/Projects/native-assistant-mcp/server.py"
       ],
-      "env": {}
+      "env": {
+        "PYTHONPATH": "/Users/krishnakanth/Projects/native-assistant-mcp",
+        "MCP_RELOAD": "2"
+      }
+    },
+    "discord-bot": {
+      "command": "/Users/krishnakanth/Projects/discord-bot-mcp/.venv/bin/python",
+      "args": [
+        "/Users/krishnakanth/Projects/discord-bot-mcp/server.py"
+      ],
+      "env": {
+        "DISCORD_BOT_TOKEN": "${DISCORD_BOT_TOKEN}",
+        "DISCORD_DEFAULT_GUILD_ID": "1515016569292591296",
+        "PYTHONPATH": "/Users/krishnakanth/Projects/discord-bot-mcp"
+      }
+    },
+    "whatsapp": {
+      "command": "/Users/krishnakanth/Projects/whatsapp-mcp/.venv/bin/python",
+      "args": [
+        "/Users/krishnakanth/Projects/whatsapp-mcp/server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/krishnakanth/Projects/whatsapp-mcp",
+        "WHATSAPP_DB_PATH": "/Users/krishnakanth/Projects/whatsapp-mcp/whatsapp.sqlite3",
+        "PYTHONUNBUFFERED": "1",
+        "MCP_RELOAD": "1"
+      }
     }
   }
 }

@@ -52,7 +52,12 @@ class Settings(BaseSettings):
         description="Model identifier for speech transcription"
     )
     voice_system_prompt: str = Field(
-        default="You are Maxi Voice. Provide direct, single-sentence spoken answers without markdown, bullets, asterisks, or bold text.",
+        default=(
+            "You are Maxi Voice, speaking aloud via an expressive neural TTS engine (Kokoro). "
+            "Keep spoken answers concise (1-2 sentences), warm, and naturally conversational—never use markdown, bullet points, or code blocks. "
+            "Start with a short natural appraisal or reaction when appropriate (e.g., 'Oh, I got it!', 'Aha, right!', 'Hmm, let me see...', 'Oh, nice!') followed by [pause:0.15s] so the first phrase streams immediately. "
+            "Use inline expressive annotations naturally when they fit the moment: [laugh], [chuckle], [sigh], [hmm], [gasp], [pause:0.3s], [excited], or [thoughtful]."
+        ),
         alias="VOICE_SYSTEM_PROMPT"
     )
     enable_voice_hotkey: bool = Field(
@@ -95,6 +100,21 @@ class Settings(BaseSettings):
         alias="VOICE_SILENCE_DURATION",
         description="Silence duration in seconds before auto-stopping recording (if auto_endpoint enabled)"
     )
+    auto_duck_audio: bool = Field(
+        default=False,
+        alias="AUTO_DUCK_AUDIO",
+        description="Automatically duck/lower system volume while recording voice input (Willow PrivateDucker)"
+    )
+    enable_context_capture: bool = Field(
+        default=True,
+        alias="ENABLE_CONTEXT_CAPTURE",
+        description="Capture active app, window title, URL, and highlighted text on hotkey press (Willow FocusedInputCapture)"
+    )
+    double_tap_window: float = Field(
+        default=0.38,
+        alias="DOUBLE_TAP_WINDOW",
+        description="Max interval in seconds between two quick hotkey taps to lock hands-free recording"
+    )
 
     agent_timeout_seconds: float = Field(
         default=90.0,
@@ -102,21 +122,31 @@ class Settings(BaseSettings):
         description="Maximum execution timeout in seconds for agent turn execution"
     )
 
-    # Siri Text-to-Speech (TTS) Configuration
+    # Text-to-Speech (TTS) Configuration (Kokoro Neural TTS + Siri Fallback)
     enable_tts: bool = Field(
         default=True,
         alias="ENABLE_TTS",
-        description="Enable Siri Text-to-Speech voice responses"
+        description="Enable Text-to-Speech voice responses"
+    )
+    tts_provider: str = Field(
+        default="kokoro",
+        alias="TTS_PROVIDER",
+        description="TTS backend provider ('kokoro' for OpenAI-compatible Kokoro-FastAPI or 'siri' for macOS native say)"
+    )
+    tts_base_url: str = Field(
+        default="http://100.75.149.115:8880/v1",
+        alias="TTS_BASE_URL",
+        description="Base URL for OpenAI-compatible Kokoro TTS server"
     )
     tts_voice: str = Field(
-        default="Tara",
+        default="af_heart",
         alias="TTS_VOICE",
-        description="Siri TTS voice preset or macOS voice name (e.g. Tara, Samantha, Daniel, Karen, Moira, Rishi)"
+        description="Active TTS voice (e.g. Kokoro: af_heart, af_bella, am_fenrir, bf_emma; Siri: Tara, Samantha, Daniel)"
     )
     tts_rate: int = Field(
         default=190,
         alias="TTS_RATE",
-        description="TTS speaking rate in words per minute (default 190 for natural Siri cadence)"
+        description="TTS speaking rate in words per minute (190 WPM = 1.0x Kokoro speed)"
     )
     tts_speak_all_sources: bool = Field(
         default=False,
@@ -139,9 +169,8 @@ class Settings(BaseSettings):
     system_prompt: str = (
         "You are Maxi, an ultra-fast, capable computer assistant. "
         "Keep all responses concise, direct, and punchy with zero fluff. "
-        "You have access to native workstation MCP tools and persistent LMEM memory. "
-        "CRITICAL MEMORY DIRECTIVE: Whenever the user mentions personal preferences, favorite items (e.g. 'my favorite song', 'my favorite movie', 'my routine'), friends, habits, or past context, you MUST ALWAYS query LMEM memory via `lmem_recall` or `lmem_answer` FIRST before answering or executing. Never guess or search public websites for user-specific personal preferences. "
-        "Proactively execute requested tasks via native tools."
+        "You have access to native workstation MCP tools and persistent LMEM memory. Relevant user memories and preferences are automatically injected into your context. "
+        "PROACTIVE AUTONOMOUS DIRECTIVE: When the user asks you to play audio, join voice channels, send messages, or perform actions, execute them immediately using your tools. NEVER stall by asking the user for channel IDs, guild IDs, or file paths that you can resolve via your tools (such as `discord_list_channels`, `discord_list_guilds`, `whatsapp_list_contacts`) or local files (e.g. `/tmp/stefan_theme.mp3`). Resolve parameters and trigger the action (such as `discord_play_audio`, `discord_join_voice`) autonomously in the same turn."
     )
 
     # Base configuration paths (defaults to .maxi directory)

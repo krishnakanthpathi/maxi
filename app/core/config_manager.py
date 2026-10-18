@@ -122,11 +122,21 @@ KEY_ALIASES = {
     "agent_timeout_seconds": "AGENT_TIMEOUT_SECONDS",
     "AGENT_TIMEOUT_SECONDS": "AGENT_TIMEOUT_SECONDS",
 
-    # Siri Text-to-Speech (TTS) aliases
+    # Text-to-Speech (TTS) aliases
     "tts": "ENABLE_TTS",
     "enable-tts": "ENABLE_TTS",
     "enable_tts": "ENABLE_TTS",
     "ENABLE_TTS": "ENABLE_TTS",
+
+    "tts-provider": "TTS_PROVIDER",
+    "tts_provider": "TTS_PROVIDER",
+    "TTS_PROVIDER": "TTS_PROVIDER",
+
+    "tts-url": "TTS_BASE_URL",
+    "tts_url": "TTS_BASE_URL",
+    "tts-base-url": "TTS_BASE_URL",
+    "tts_base_url": "TTS_BASE_URL",
+    "TTS_BASE_URL": "TTS_BASE_URL",
 
     "tts-voice": "TTS_VOICE",
     "tts_voice": "TTS_VOICE",
@@ -259,6 +269,8 @@ def get_current_config() -> Dict[str, Any]:
         "hotkey_enabled": settings.enable_voice_hotkey,
         "agent_timeout_seconds": settings.agent_timeout_seconds,
         "enable_tts": settings.enable_tts,
+        "tts_provider": getattr(settings, "tts_provider", "kokoro"),
+        "tts_base_url": getattr(settings, "tts_base_url", "http://100.75.149.115:8880/v1"),
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
         "tts_speak_all_sources": settings.tts_speak_all_sources,
@@ -304,6 +316,10 @@ def save_config(updates: Dict[str, str], notify_daemon: bool = True) -> Tuple[bo
                 pass
         elif k == "ENABLE_TTS":
             settings.enable_tts = v.lower() in ("true", "1", "yes")
+        elif k == "TTS_PROVIDER":
+            settings.tts_provider = v.lower().strip()
+        elif k == "TTS_BASE_URL":
+            settings.tts_base_url = v.strip()
         elif k == "TTS_VOICE":
             settings.tts_voice = v
         elif k == "TTS_RATE":

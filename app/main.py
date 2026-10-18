@@ -1,6 +1,8 @@
 import asyncio
 from contextlib import asynccontextmanager
 import logging
+import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -9,9 +11,22 @@ from app.api.websocket import router as ws_router
 from app.core.mcp_client import mcp_manager
 from app.core.voice_service import voice_service
 
+_log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+_log_level = logging.INFO if not settings.debug else logging.DEBUG
+_handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+if not os.environ.get("MAXI_DAEMON_REDIRECTED"):
+    try:
+        _log_file = Path.home() / ".maxi" / "daemon.log"
+        _log_file.parent.mkdir(parents=True, exist_ok=True)
+        _handlers.append(logging.FileHandler(_log_file, encoding="utf-8"))
+    except Exception:
+        pass
+
 logging.basicConfig(
-    level=logging.INFO if not settings.debug else logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    level=_log_level,
+    format=_log_format,
+    handlers=_handlers,
 )
 logger = logging.getLogger("maxi.main")
 

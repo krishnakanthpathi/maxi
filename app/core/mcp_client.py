@@ -43,7 +43,8 @@ class MCPClientManager:
                 import os
                 server_env = dict(os.environ)
                 if isinstance(cfg.get("env"), dict):
-                    server_env.update(cfg["env"])
+                    for k, v in cfg["env"].items():
+                        server_env[k] = os.path.expandvars(str(v)) if isinstance(v, str) else v
                 home = str(Path.home())
                 extra_paths = [
                     f"{home}/.local/bin",

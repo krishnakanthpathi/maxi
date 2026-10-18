@@ -1,15 +1,16 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional, Callable
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
 from langchain_core.tools import BaseTool
 from app.config import settings
 from app.core.skills import skill_registry
 from app.core.mcp_client import mcp_manager
-from app.core.lmem_tools import get_lmem_tools
+from app.core.lmem_tools import get_lmem_tools, auto_recall_memories
 
 logger = logging.getLogger("maxi.agent")
 
@@ -72,8 +73,12 @@ class MaxiAgent:
         return str(output)
 
     def _build_system_prompt(self, prompt: str = "", source: str = "text") -> str:
-        """Injects only the base persona and relevant markdown skills for this prompt."""
+        """Injects the base persona, voice expressive instructions (when spoken), and relevant markdown skills."""
         base_prompt = self.settings.system_prompt
+        if source and source.startswith("voice"):
+            voice_prompt = getattr(self.settings, "voice_system_prompt", "").strip()
+            if voice_prompt:
+                base_prompt = f"{base_prompt}\n\n## Voice Delivery & Expressive Annotations\n{voice_prompt}"
         skills_prompt = skill_registry.compile_instructions_for_prompt(prompt, source=source)
         if skills_prompt:
             return f"{base_prompt}\n\n## Dynamically Loaded Skills\n{skills_prompt}"
@@ -99,10 +104,18 @@ class MaxiAgent:
             logger.error(f"Failed to record turn to history log: {e}")
 
     def _get_all_tools(self) -> List[BaseTool]:
-        """Combines native MCP tools with first-class LightMem memory tools."""
-        return mcp_manager.get_tools() + get_lmem_tools()
+        """Combines native MCP tools, first-class LightMem memory tools, and Willow SmartInsertions cursor injection."""
+        from app.core.text_injector import get_text_injector_tools
+        return mcp_manager.get_tools() + get_lmem_tools() + get_text_injector_tools()
 
-    async def run(self, prompt: str, source: str = "text") -> Dict[str, Any]:
+    async def run(
+        self,
+        prompt: str,
+        source: str = "text",
+        context_block: str = "",
+        on_tool_start: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
+        on_tool_end: Optional[Callable[[str, str], Any]] = None,
+    ) -> Dict[str, Any]:
         """Execute prompt against OpenAI-compatible endpoint with MCP tool execution and 5-turn history."""
         # Check for explicit session reset request
         clean_prompt = prompt.strip().lower()
@@ -125,14 +138,23 @@ class MaxiAgent:
 
         logger.info(f"Dispatching [{source}] prompt to {self.settings.openai_model} @ {self.settings.openai_base_url} ({len(tools)} tools loaded, {len(self._history)//2} turns in memory)")
 
+        memories_block = auto_recall_memories(prompt)
+        prompt_parts = []
+        if memories_block:
+            prompt_parts.append(memories_block)
+        if context_block:
+            prompt_parts.append(context_block)
+        prompt_parts.append(f"User Command: {prompt}")
+        human_content = "\n\n".join(prompt_parts)
+
         messages: List[BaseMessage] = [
             SystemMessage(content=system_instruction),
             *self.get_history(),
-            HumanMessage(content=prompt)
+            HumanMessage(content=human_content)
         ]
 
         executed_tools: List[str] = []
-        max_turns = 5
+        max_turns = 8
         output_text = ""
 
         try:
@@ -157,6 +179,15 @@ class MaxiAgent:
                     logger.info(f"Turn {turn + 1}: Executing tool '{call_name}' with args {call_args}")
                     executed_tools.append(call_name)
 
+                    if on_tool_start:
+                        try:
+                            if asyncio.iscoroutinefunction(on_tool_start):
+                                await on_tool_start(call_name, call_args)
+                            else:
+                                on_tool_start(call_name, call_args)
+                        except Exception as e:
+                            logger.debug(f"Error calling on_tool_start: {e}")
+
                     tool = tool_map.get(call_name)
                     if tool:
                         try:
@@ -171,13 +202,28 @@ class MaxiAgent:
                     else:
                         tool_result = f"Tool '{call_name}' not found."
 
+                    if on_tool_end:
+                        try:
+                            if asyncio.iscoroutinefunction(on_tool_end):
+                                await on_tool_end(call_name, tool_result)
+                            else:
+                                on_tool_end(call_name, tool_result)
+                        except Exception as e:
+                            logger.debug(f"Error calling on_tool_end: {e}")
+
                     messages.append(ToolMessage(
                         content=tool_result,
                         tool_call_id=call_id
                     ))
             else:
-                last_msg = messages[-1]
-                output_text = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
+                # Max turns exhausted; synthesize final natural answer rather than dumping raw tool error
+                try:
+                    summary_llm = self._get_llm(streaming=False)
+                    final_resp = await summary_llm.ainvoke(messages)
+                    output_text = final_resp.content if isinstance(final_resp.content, str) else str(final_resp.content)
+                except Exception:
+                    last_msg = messages[-1]
+                    output_text = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
 
             # Fallback confirmation if tools executed but no text returned
             if not output_text.strip() and executed_tools:
@@ -223,22 +269,31 @@ class MaxiAgent:
                 "status": "error"
             }
 
-    async def run_stream(self, prompt: str, source: str = "text") -> AsyncGenerator[str, None]:
+    async def run_stream(
+        self,
+        prompt: str,
+        source: str = "text",
+        on_tool_start: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
+        on_tool_end: Optional[Callable[[str, str], Any]] = None,
+    ) -> AsyncGenerator[str, None]:
         """Stream token-by-token response over WebSockets, executing tool calls when requested."""
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
         tools = self._get_all_tools()
         tool_map = {t.name: t for t in tools}
 
+        memories_block = auto_recall_memories(prompt)
+        human_content = f"{memories_block}\n\nUser Command: {prompt}" if memories_block else prompt
+
         messages: List[BaseMessage] = [
             SystemMessage(content=system_instruction),
             *self.get_history(),
-            HumanMessage(content=prompt)
+            HumanMessage(content=human_content)
         ]
 
         full_output: List[str] = []
         executed_tools: List[str] = []
-        max_turns = 5
+        max_turns = 8
 
         try:
             llm = self._get_llm(streaming=False)
@@ -265,6 +320,15 @@ class MaxiAgent:
                     logger.info(f"Stream turn {turn + 1}: Executing tool '{call_name}' with args {call_args}")
                     executed_tools.append(call_name)
 
+                    if on_tool_start:
+                        try:
+                            if asyncio.iscoroutinefunction(on_tool_start):
+                                await on_tool_start(call_name, call_args)
+                            else:
+                                on_tool_start(call_name, call_args)
+                        except Exception as e:
+                            logger.debug(f"Error calling on_tool_start in stream: {e}")
+
                     tool = tool_map.get(call_name)
                     if tool:
                         try:
@@ -279,16 +343,34 @@ class MaxiAgent:
                     else:
                         tool_result = f"Tool '{call_name}' not found."
 
+                    if on_tool_end:
+                        try:
+                            if asyncio.iscoroutinefunction(on_tool_end):
+                                await on_tool_end(call_name, tool_result)
+                            else:
+                                on_tool_end(call_name, tool_result)
+                        except Exception as e:
+                            logger.debug(f"Error calling on_tool_end in stream: {e}")
+
                     messages.append(ToolMessage(
                         content=tool_result,
                         tool_call_id=call_id
                     ))
             else:
-                last_msg = messages[-1]
-                text_chunk = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
-                if text_chunk:
-                    full_output.append(text_chunk)
-                    yield text_chunk
+                # Max turns exhausted; synthesize final chunk rather than dumping raw tool error
+                try:
+                    summary_llm = self._get_llm(streaming=False)
+                    final_resp = await summary_llm.ainvoke(messages)
+                    text_chunk = final_resp.content if isinstance(final_resp.content, str) else str(final_resp.content)
+                    if text_chunk:
+                        full_output.append(text_chunk)
+                        yield text_chunk
+                except Exception:
+                    last_msg = messages[-1]
+                    text_chunk = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
+                    if text_chunk:
+                        full_output.append(text_chunk)
+                        yield text_chunk
 
             final_text = "".join(full_output).strip()
             if not final_text and executed_tools:
