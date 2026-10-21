@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maxi Docs — From your first shortcut.</title>
+  <meta name="description" content="Install Maxi, connect your model, set up voice and MCP tools, and understand how chats and optional memory work.">
+  <meta name="theme-color" content="#f5f5f0">
+  <meta property="og:title" content="Maxi Docs — From your first shortcut.">
+  <meta property="og:description" content="A practical guide to your voice-controlled desktop assistant.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/docs.css">
+  <script src="/docs.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav shell docs-header">
+    <a class="brand" href="/" aria-label="Maxi home"><svg viewBox="0 0 128 128" aria-hidden="true"><path d="M100 20H28L66 64L28 108H100"/></svg><span>maxi<span class="brand-dot">.</span></span></a>
+    <span class="docs-label">/ documentation</span>
+    <nav aria-label="Main navigation"><a href="/">Home</a><a href="https://github.com/krishnakanthpathi/maxi" target="_blank" rel="noopener">GitHub ↗</a></nav>
+    <a class="nav-download" href="/#get-started">Get Maxi <span aria-hidden="true">↓</span></a>
+  </header>
+  <div class="shell docs-layout">
+    <aside class="docs-sidebar">
+      <details class="docs-toc" open>
+        <summary>IN THIS GUIDE <span aria-hidden="true">⌄</span></summary>
+        <nav aria-label="Documentation sections">
+          <span class="toc-group">GET STARTED</span>
+          <a href="#overview" aria-current="location">Welcome to Maxi</a>
+          <a href="#installation">Installation</a>
+          <a href="#configuration">Models &amp; voice</a>
+          <span class="toc-group">MAKE IT YOURS</span>
+          <a href="#controls">Everyday controls</a>
+          <a href="#memory">Chats &amp; memory</a>
+          <a href="#tools">Tools &amp; skills</a>
+          <span class="toc-group">GOOD TO KNOW</span>
+          <a href="#cli">CLI &amp; local API</a>
+          <a href="#troubleshooting">Troubleshooting</a>
+          <a href="#deployment">Deploy the website</a>
+        </nav>
+      </details>
+      <a class="sidebar-release" href="https://github.com/krishnakanthpathi/maxi/releases/tag/v0.3.0-beta.1"><span class="status-dot"></span> v0.3.0-beta.1 <span aria-hidden="true">↗</span></a>
+    </aside>
+    <main id="main" class="docs-content">
+      <section id="overview" class="docs-intro">
+        <div class="eyebrow">THE MAXI FIELD GUIDE <span class="docs-beta">MACOS BETA</span></div>
+        <h1>A little setup.<br><span>A lot more flow.</span></h1>
+        <p class="docs-lead">From your first shortcut to your own tools. Everything you need to make the little ∑ feel at home.</p>
+        <div class="docs-quicklinks"><a href="#installation">Install Maxi <span aria-hidden="true">↘</span></a><a href="#troubleshooting">Something stuck? <span aria-hidden="true">↘</span></a></div>
+        <div class="docs-note"><span class="note-mark" aria-hidden="true">∑</span><div><strong>Two pieces. One assistant.</strong><p>The Python daemon handles voice, models, and tools. The native macOS HUD is its floating companion. Start the daemon before opening the HUD.</p></div></div>
+      </section>
+
+      <section id="installation" class="doc-section">
+        <div class="eyebrow">01 / GET UP AND RUNNING</div>
+        <h2>Installation</h2>
+        <p>You’ll need Python 3.10+, a configured OpenAI-compatible LLM endpoint, and a Whisper-compatible transcription provider for voice input.</p>
+        <ul><li>The native HUD needs macOS 14+. Liquid Glass is available on macOS 26+; earlier supported versions use translucent material.</li><li>The prebuilt HUD is for Apple Silicon. Intel users can build the Swift source.</li><li>This beta is unsigned and not notarized. The HUD download does not bundle the Python daemon.</li></ul>
+        <div class="docs-downloads"><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl">Python backend <span aria-hidden="true">↓</span></a><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/MaxiHUD-0.3.0-beta.1-macos-arm64.zip">macOS HUD <span aria-hidden="true">↓</span></a></div>
+        <h3>Install the backend</h3>
+        <p>Download the Python wheel above into your Downloads folder, then run:</p>
+        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS / LINUX</span><button type="button" data-copy aria-label="Copy backend installation commands">Copy ⧉</button></div><pre><code>python3 -m venv ~/.maxi/venv
+~/.maxi/venv/bin/python -m pip install "$HOME/Downloads/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
+~/.maxi/venv/bin/maxi config wizard
+~/.maxi/venv/bin/maxi start</code></pre></div>
+        <p>Start the LLM server you configured before sending a request. The wizard sets up your providers. For voice, supply your transcription provider key if it was not configured there.</p>
+        <h3>Open the macOS HUD</h3>
+        <p>Unzip the HUD download and open <code>Maxi.app</code>. If macOS blocks the unsigned application, review it in System Settings → Privacy &amp; Security. Grant Microphone access and Accessibility/Input Monitoring access to the Python or terminal application running Maxi’s shortcut listener.</p>
+        <p>For an Intel Mac, or to build the HUD yourself, install Xcode Command Line Tools and run:</p>
+        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS</span><button type="button" data-copy aria-label="Copy HUD build commands">Copy ⧉</button></div><pre><code>xcode-select --install
+~/.maxi/venv/bin/maxi hud --rebuild</code></pre></div>
+        <details class="doc-details"><summary>Using Linux or Windows?</summary><p>The backend and platform shortcuts are supported, with no native GUI in this release. Linux voice input needs PortAudio. On Windows, download the same wheel and use PowerShell:</p><div class="code-block"><div class="code-heading"><span>POWERSHELL · WINDOWS</span><button type="button" data-copy aria-label="Copy Windows installation commands">Copy ⧉</button></div><pre><code>py -m venv "$HOME\.maxi\venv"
+&amp; "$HOME\.maxi\venv\Scripts\python.exe" -m pip install "$HOME\Downloads\maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
+&amp; "$HOME\.maxi\venv\Scripts\maxi.exe" config wizard
+&amp; "$HOME\.maxi\venv\Scripts\maxi.exe" start</code></pre></div></details>
+        <p class="doc-caption">Add your virtual environment’s executable directory to PATH to use the shorter <code>maxi</code> commands below. On macOS/Linux, that directory is <code>~/.maxi/venv/bin</code>.</p>
+      </section>
+
+      <section id="configuration" class="doc-section">
+        <div class="eyebrow">02 / YOUR MODEL, YOUR CALL</div><h2>Models &amp; voice</h2>
+        <p>Maxi uses an OpenAI-compatible endpoint for the LLM and a separate Whisper-compatible endpoint for transcription. Use the interactive wizard or set the values directly.</p>
+        <div class="code-block"><div class="code-heading"><span>EXAMPLE · LOCAL OLLAMA ENDPOINT</span><button type="button" data-copy aria-label="Copy model configuration commands">Copy ⧉</button></div><pre><code>maxi config wizard
+maxi config preset ollama
+maxi config set llm-url http://localhost:11434/v1
+maxi config set llm-model llama3.2
+maxi config set voice-key YOUR_PROVIDER_KEY
+maxi restart</code></pre></div>
+        <p>Choose a model that is installed and available on your endpoint. Presets also include <code>groq</code> and <code>openrouter</code>. Your settings are saved in <code>~/.maxi/.env</code>.</p>
+        <div class="table-scroll"><table><caption>Provider settings in your .env file</caption><thead><tr><th>Variable</th><th>Purpose</th></tr></thead><tbody><tr><td><code>OPENAI_BASE_URL</code></td><td>Your LLM’s compatible API base URL.</td></tr><tr><td><code>OPENAI_MODEL</code></td><td>The model identifier on that endpoint.</td></tr><tr><td><code>OPENAI_API_KEY</code></td><td>Your LLM provider’s key.</td></tr><tr><td><code>VOICE_BASE_URL</code></td><td>Your transcription API base URL.</td></tr><tr><td><code>VOICE_MODEL</code></td><td>Your speech transcription model.</td></tr><tr><td><code>VOICE_API_KEY</code></td><td>Your transcription provider’s key.</td></tr></tbody></table></div>
+        <div class="docs-note"><span class="note-mark" aria-hidden="true">↗</span><div><strong>Local model, separate voice provider.</strong><p>Audio goes to the transcription endpoint you configure. Prompts and captured context go to your LLM endpoint. A local LLM alone does not make transcription local.</p></div></div>
+      </section>
+
+      <section id="controls" class="doc-section">
+        <div class="eyebrow">03 / STAY IN YOUR FLOW</div><h2>Everyday controls</h2>
+        <div class="table-scroll"><table><caption>Your everyday shortcuts</caption><thead><tr><th>What you want to do</th><th>How</th></tr></thead><tbody><tr><td>Record a request</td><td>Hold <kbd>right ⌥</kbd> on macOS; <kbd>Ctrl + Space</kbd> on Linux/Windows. Release to send.</td></tr><tr><td>Record hands-free</td><td>Double-tap the shortcut. Tap again to finish.</td></tr><tr><td>Cancel voice work</td><td>Press <kbd>Esc</kbd>.</td></tr><tr><td>Start a fresh conversation</td><td>Choose New Chat (+) in the HUD or its menu.</td></tr><tr><td>Keep an answer visible</td><td>Use Pin in the HUD.</td></tr><tr><td>Pause spoken responses</td><td>Use the Speaker toggle.</td></tr><tr><td>Insert text at your cursor</td><td>Begin with “Dictate:”. Text insertion requires Accessibility access.</td></tr></tbody></table></div>
+        <p>Recording starts with the shortcut. Maxi does not use an always-on wake-word listener.</p>
+      </section>
+
+      <section id="memory" class="doc-section">
+        <div class="eyebrow">04 / KEEP WHAT MATTERS</div><h2>Chats &amp; memory</h2>
+        <p><strong>New Chat clears recent conversation and stops active voice work.</strong> Late responses from the previous chat cannot refill that context. Use it when a conversation has collected assumptions you no longer want the model to use.</p>
+        <p>Optional LightMem storage is separate. Facts deliberately saved there remain available after New Chat. This beta provides explicit remember, recall, and answer tools; it does not automatically inject memories into every request.</p>
+        <div class="memory-example"><span class="quote-label">SAVE SOMETHING ON PURPOSE</span><blockquote>“Remember: I prefer short, direct answers.”</blockquote><p>Check the tool’s confirmation before assuming the fact was saved.</p></div>
+        <h3>Enable optional LightMem</h3>
+        <p>Install the separate <code>lmem</code> package and make its CLI available to the daemon. If you use Maxi’s virtual environment:</p>
+        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS / LINUX</span><button type="button" data-copy aria-label="Copy optional memory installation commands">Copy ⧉</button></div><pre><code>~/.maxi/venv/bin/python -m pip install lmem
+~/.maxi/venv/bin/lmem --help
+export PATH="$HOME/.maxi/venv/bin:$PATH"
+~/.maxi/venv/bin/maxi restart</code></pre></div>
+        <p>To change or remove saved facts, use the management commands supported by your installed <code>lmem</code> version; list them with <code>lmem --help</code>. Maxi’s New Chat action does not delete that memory store.</p>
+      </section>
+
+      <section id="tools" class="doc-section">
+        <div class="eyebrow">05 / A LITTLE MORE REACH</div><h2>Tools &amp; skills</h2>
+        <p>Connect MCP servers to give your model tools for desktop actions. Available actions depend on the servers you install and the permissions you grant. Maxi does not bundle third-party MCP servers or model runtimes.</p>
+        <p>Create <code>~/.maxi/mcp_config.json</code> with your server configuration. For a stdio server:</p>
+        <div class="code-block"><div class="code-heading"><span>MCP_CONFIG.JSON · EXAMPLE</span><button type="button" data-copy aria-label="Copy MCP configuration example">Copy ⧉</button></div><pre><code>{
+  "mcpServers": {
+    "your-server": {
+      "command": "/absolute/path/to/server-command",
+      "args": ["/absolute/path/to/server.py"]
+    }
+  }
+}</code></pre></div>
+        <p>Replace the example paths with an installed server you trust. Place custom Markdown skills in <code>~/.maxi/skills/</code>. Use the HUD menu to reload skills and MCP connections after changes.</p>
+      </section>
+
+      <section id="cli" class="doc-section">
+        <div class="eyebrow">06 / UNDER THE LITTLE ∑</div><h2>CLI &amp; local API</h2>
+        <div class="table-scroll"><table><caption>Common CLI commands</caption><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>maxi start</code></td><td>Start the daemon in the background.</td></tr><tr><td><code>maxi stop</code> / <code>maxi restart</code></td><td>Stop or restart the daemon.</td></tr><tr><td><code>maxi status</code></td><td>Inspect daemon and MCP health.</td></tr><tr><td><code>maxi run</code></td><td>Run in the foreground to see logs.</td></tr><tr><td><code>maxi hud</code></td><td>Launch the macOS HUD.</td></tr><tr><td><code>maxi hud --rebuild</code></td><td>Rebuild and launch the HUD.</td></tr><tr><td><code>maxi config</code></td><td>View provider settings.</td></tr><tr><td><code>maxi glossary</code></td><td>Manage transcription vocabulary.</td></tr><tr><td><code>maxi --version</code></td><td>Show the installed version.</td></tr></tbody></table></div>
+        <p>The daemon binds to <code>127.0.0.1:4848</code> by default. While it is running, its interactive API reference is at <code>http://127.0.0.1:4848/docs</code>; events use <code>ws://127.0.0.1:4848/ws</code>. Keep the desktop service on loopback.</p>
+      </section>
+
+      <section id="troubleshooting" class="doc-section">
+        <div class="eyebrow">07 / WHEN SOMETHING GETS STUCK</div><h2>Troubleshooting</h2>
+        <details class="doc-details" open><summary>Holding the shortcut doesn’t show anything</summary><p>Run <code>maxi status</code>. If the daemon is stopped, run <code>maxi start</code>. Open <code>Maxi.app</code> or run <code>maxi hud</code>. The HUD and daemon both need to be running.</p><p>In System Settings → Privacy &amp; Security, check Microphone, Accessibility, and Input Monitoring permissions for the terminal or Python application that runs Maxi. Restart the daemon after changing permissions. Also check that another application has not claimed your shortcut.</p></details>
+        <details class="doc-details"><summary>The HUD says it is disconnected</summary><p>Check <code>maxi status</code> and try <code>maxi restart</code>. The HUD reconnects to the local daemon. If the problem persists, stop the background daemon with <code>maxi stop</code>, then run <code>maxi run</code> in a terminal to inspect startup errors.</p></details>
+        <details class="doc-details"><summary>Recording works, but I don’t get a response</summary><p>Verify that the LLM endpoint is running and your configured model exists there. Check your transcription provider URL and key. Run the daemon in the foreground with <code>maxi run</code> after stopping the background instance to see provider errors.</p></details>
+        <details class="doc-details"><summary>The model is using context I don’t want</summary><p>Choose New Chat to reset recent conversation. Previously saved LightMem facts stay separate; manage those through your installed <code>lmem</code> CLI. Starting a chat does not delete saved memories.</p></details>
+        <details class="doc-details"><summary>A desktop action isn’t available</summary><p>Check that the relevant MCP server is installed and configured in <code>~/.maxi/mcp_config.json</code>. Reload MCP connections from the HUD menu, then inspect <code>maxi status</code> for connection errors.</p></details>
+        <p>Still stuck? <a href="https://github.com/krishnakanthpathi/maxi/issues" target="_blank" rel="noopener">Open an issue ↗</a> with your OS, Maxi version, and the relevant error. Remove provider keys and personal context from logs before sharing.</p>
+      </section>
+
+      <section id="deployment" class="doc-section">
+        <div class="eyebrow">08 / SHARE THE LITTLE IDEA</div><h2>Deploy the website</h2>
+        <p>Import the Maxi GitHub repository into Vercel. Set <strong>Root Directory to <code>./</code></strong> and Framework Preset to <strong>Other</strong>. The root <code>vercel.json</code> sets the output directory to <code>website</code> and skips installation and building. No environment variables are required.</p>
+        <p>The homepage is <code>/</code> and this guide is <code>/docs</code>. Vercel serves the public pages; the daemon and HUD run on each user’s computer.</p>
+        <a class="text-link" href="https://github.com/krishnakanthpathi/maxi/blob/main/docs/VERCEL.md">View deployment instructions <span aria-hidden="true">↗</span></a>
+      </section>
+      <div class="docs-end"><span class="sigma" aria-hidden="true">∑</span><div><strong>All set. Make a little room.</strong><p>Your next shortcut starts with a hold.</p></div><a href="/#get-started">Get Maxi ↗</a></div>
+    </main>
+  </div>
+  <footer class="shell footer"><a class="brand" href="/"><svg viewBox="0 0 128 128" aria-hidden="true"><path d="M100 20H28L66 64L28 108H100"/></svg><span>maxi.</span></a><span>A little less clicking. A lot more flow.</span><div><a href="https://github.com/krishnakanthpathi/maxi/releases">Releases ↗</a><a href="#overview">Back to top ↑</a></div></footer>
+  <div class="sr-only" role="status" aria-live="polite" id="docs-status"></div>
+</body>
+</html>

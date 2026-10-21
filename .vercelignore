@@ -1,0 +1,5 @@
+# Only the public website is needed for CLI deployments.
+*
+!website/
+!website/**
+!vercel.json

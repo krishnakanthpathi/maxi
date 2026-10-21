@@ -129,6 +129,10 @@ python3 scripts/verify_release.py
 
 The wheel includes the Swift frontend source and bundled sound assets. Release distributions exclude private configuration, runtime history, databases, pairing QR codes, and build caches. See [release preparation](docs/RELEASING.md).
 
+## Website
+
+The landing page and user documentation live in `website/`. For Vercel, set the Root Directory to `./`; `vercel.json` supplies the static output settings. See [deployment instructions](docs/VERCEL.md).
+
 ## License
 
 [MIT](LICENSE). The ∑ mark is available as [SVG](assets/maxi-mark.svg).

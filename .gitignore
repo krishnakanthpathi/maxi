@@ -58,3 +58,6 @@ sites/
 
 # Per-machine MCP server paths and credentials.
 .maxi/mcp_config.json
+
+# Vercel's local project link.
+.vercel/
