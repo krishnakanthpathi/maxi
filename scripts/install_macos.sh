@@ -15,6 +15,7 @@ bin_dir="${MAXI_BIN_DIR:-$HOME/.local/bin}"
 app_source=''
 configure=1
 launch=1
+open_hud=1
 
 die() { printf 'Maxi: %s\n' "$*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do
@@ -22,11 +23,13 @@ while [[ $# -gt 0 ]]; do
         --app-source) [[ $# -ge 2 ]] || die '--app-source needs a path'; app_source="$2"; shift 2 ;;
         --no-configure) configure=0; shift ;;
         --no-launch) launch=0; shift ;;
+        --no-hud) open_hud=0; shift ;;
         --help|-h)
             printf '%s\n' 'Install Maxi for macOS 14+ (Apple Silicon and Intel).' \
                 '  --app-source PATH  Use a bundled Maxi.app instead of downloading it.' \
                 '  --no-configure     Skip the interactive provider wizard.' \
                 '  --no-launch        Install without starting the daemon or HUD.' \
+                '  --no-hud           Start and verify the backend without opening the HUD.' \
                 'Existing provider configuration and saved memories are preserved.'
             exit 0 ;;
         *) die "Unknown option: $1" ;;
@@ -168,8 +171,29 @@ if [[ "$configure" -eq 1 && "$fresh_config" -eq 1 ]]; then
     fi
 fi
 if [[ "$launch" -eq 1 ]]; then
-    printf '\nOpening Maxi (the app starts the daemon automatically)…\n'
-    open "$target_app"
+    printf '\nStarting the Python backend…\n'
+    (cd "$install_dir" && "$venv/bin/python" -m app.cli start)
+    printf 'Waiting for the backend to become ready…\n'
+    "$venv/bin/python" - "$install_dir/daemon.log" <<'PY'
+import json, sys, time, urllib.request
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:4848/api/health', timeout=1) as response:
+            data = json.load(response)
+        if data.get('status') == 'ok' and data.get('service') == 'Maxi Agent Daemon':
+            print('Maxi backend is running and healthy at http://127.0.0.1:4848')
+            break
+    except (OSError, ValueError):
+        pass
+    time.sleep(0.25)
+else:
+    raise SystemExit('Maxi is installed, but its backend did not become ready. Check ' + sys.argv[1])
+PY
+    if [[ "$open_hud" -eq 1 ]]; then
+        printf '\nOpening the Maxi HUD…\n'
+        open "$target_app"
+    fi
 fi
 printf '\nIf macOS blocks this unsigned beta, review Maxi in Privacy & Security.\n'
 printf 'Allow Microphone and Accessibility/Input Monitoring when requested.\n'

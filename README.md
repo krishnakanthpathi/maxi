@@ -20,7 +20,7 @@ The macOS beta is not Developer ID signed or notarized. The combined app include
 
 ## Install the beta
 
-On macOS 14+, download the **universal DMG** from [GitHub Releases](https://github.com/krishnakanthpathi/maxi/releases/tag/v0.3.0-beta.1), drag Maxi to Applications, and open it. First launch opens Terminal for setup and provider configuration. Later launches start the daemon and HUD together. The app and mounted disk use the ∑ icon.
+On macOS 14+, download the **universal DMG** from [GitHub Releases](https://github.com/krishnakanthpathi/maxi/releases/tag/v0.3.0-beta.1), drag Maxi to Applications, and open it. First launch opens Terminal for setup and provider configuration. The installer starts the Python backend, verifies it is healthy, and opens the HUD. Later launches start the daemon and HUD together. The app and mounted disk use the ∑ icon.
 
 Or install both pieces with one command:
 

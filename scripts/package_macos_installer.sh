@@ -36,7 +36,7 @@ info = {
     'CFBundleDisplayName': 'Maxi', 'CFBundleName': 'Maxi',
     'CFBundleExecutable': 'MaxiHUD', 'CFBundleIdentifier': 'com.maxi.hud',
     'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.3.0',
-    'CFBundleVersion': '3', 'LSMinimumSystemVersion': '14.0',
+    'CFBundleVersion': '4', 'LSMinimumSystemVersion': '14.0',
     'CFBundleIconFile': 'Maxi.icns', 'LSUIElement': True,
     'NSHighResolutionCapable': True,
     'NSMicrophoneUsageDescription': 'Maxi records your voice while you use the voice shortcut.',

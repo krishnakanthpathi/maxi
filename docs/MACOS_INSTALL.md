@@ -16,8 +16,9 @@ it does not open a conventional main window.
 
 On first launch, the app opens the bundled `Install Maxi.command`
 in Terminal. It installs Python if needed, installs the bundled backend wheel
-and voice dependencies, and runs the provider wizard. Open Maxi again after
-setup to start both the daemon and HUD. The installer normally opens it for you.
+and voice dependencies, and runs the provider wizard. The installer starts the
+Python daemon directly, waits for its local health check to succeed, and then
+opens the HUD. Later app launches also ensure the daemon is running.
 
 The app uses an ad-hoc signature, not a Developer ID signature or notarization.
 If macOS blocks it, review Maxi in System Settings → Privacy & Security.

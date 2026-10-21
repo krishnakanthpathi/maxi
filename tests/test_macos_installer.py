@@ -40,6 +40,8 @@ if [[ "$1" == venv ]]; then
     cat > "$venv/bin/python" <<'STUB'
 #!/bin/bash
 echo "$*" >> "$MAXI_INSTALL_DIR/python.calls"
+if [[ "${MAXI_TEST_FAIL_READY:-0}" == 1 && "$#" == 2 && "$1" == - ]]; then exit 2; fi
+if [[ "$*" == '-m app.cli start' ]]; then printf '%s' "$PWD" > "$MAXI_INSTALL_DIR/start.cwd"; fi
 if [[ "$*" == *--version* ]]; then echo 'maxi 0.3.0b1'; fi
 STUB
     chmod +x "$venv/bin/python"
@@ -51,9 +53,9 @@ fi
     return prefix, apps, bins, source, env
 
 
-def run(source, env):
+def run(source, env, *options, launch=False):
     return subprocess.run(["/bin/bash", str(INSTALLER), "--app-source", str(source),
-                           "--no-configure", "--no-launch"], env=env,
+                           "--no-configure", *options, *([] if launch else ["--no-launch"])], env=env,
                           capture_output=True, text=True, timeout=20)
 
 
@@ -67,6 +69,7 @@ def test_fresh_install_without_python_installs_app_and_voice(tmp_path):
     assert "venv --managed-python --python 3.12 --seed" in calls
     assert "--only-binary :all:" in calls and "[voice]" in calls
     assert "maxi 0.3.0b1" in result.stdout
+    assert '-m app.cli start' not in (prefix / 'python.calls').read_text()
 
 
 def test_reinstall_preserves_config_memories_and_existing_runtime(tmp_path):
@@ -102,3 +105,32 @@ def test_unsupported_os_stops_before_install(tmp_path):
     result = run(source, env)
     assert result.returncode != 0 and "macOS 14" in result.stderr
     assert not (prefix / "uv.calls").exists()
+
+
+def test_install_starts_and_checks_backend_before_opening_hud(tmp_path):
+    prefix, apps, bins, source, env = setup(tmp_path)
+    tools = Path(env['PATH'].split(':')[0])
+    executable(tools / 'open', 'echo open >> "$MAXI_INSTALL_DIR/python.calls"\n')
+    result = run(source, env, launch=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (prefix / 'python.calls').read_text().splitlines()
+    assert calls.index('-m app.cli start') < calls.index(f'- {prefix}/daemon.log') < calls.index('open')
+    assert (prefix / 'start.cwd').read_text() == str(prefix)
+
+
+def test_install_does_not_open_hud_when_backend_is_unhealthy(tmp_path):
+    prefix, apps, bins, source, env = setup(tmp_path)
+    env['MAXI_TEST_FAIL_READY'] = '1'
+    result = run(source, env, launch=True)
+    assert result.returncode != 0
+    assert '-m app.cli start' in (prefix / 'python.calls').read_text()
+    assert 'UNEXPECTED_LAUNCH' not in result.stderr
+    assert 'Opening the Maxi HUD' not in result.stdout
+
+
+def test_no_hud_starts_backend_without_opening_gui(tmp_path):
+    prefix, apps, bins, source, env = setup(tmp_path)
+    result = run(source, env, '--no-hud', launch=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert '-m app.cli start' in (prefix / 'python.calls').read_text()
+    assert 'UNEXPECTED_LAUNCH' not in result.stderr
