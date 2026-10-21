@@ -7,7 +7,7 @@ final class BarPanel: NSPanel {
 
     init<Content: View>(contentView: Content) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -38,8 +38,8 @@ final class BarPanel: NSPanel {
         let visibleFrame = screen.visibleFrame
         let fullFrame = screen.frame
 
-        let panelWidth: CGFloat = 460
-        let panelHeight: CGFloat = 320
+        let panelWidth: CGFloat = min(fullFrame.width - 60, 780)
+        let panelHeight: CGFloat = min(visibleFrame.height - 50, 600)
         let x = fullFrame.midX - (panelWidth / 2.0)
 
         let y: CGFloat
@@ -47,7 +47,8 @@ final class BarPanel: NSPanel {
         case .bottomDock:
             y = visibleFrame.minY + 14
         case .topNotch:
-            y = visibleFrame.maxY - panelHeight - 8
+            // Shifted slightly downward from the notch/menu bar (18pt) so it never clips into notch
+            y = visibleFrame.maxY - panelHeight - 18
         }
 
         let targetFrame = NSRect(x: x, y: y, width: panelWidth, height: panelHeight)

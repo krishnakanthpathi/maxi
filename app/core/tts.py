@@ -1,7 +1,7 @@
 """
 Maxi Expressive Text-to-Speech (TTS) Engine (Kokoro Neural TTS + Siri Native Fallback)
 Provides low-latency voice synthesis with:
-- Real-time HTTP PCM streaming (24kHz 16-bit mono) from Kokoro-FastAPI on Linux HP (http://100.75.149.115:8880/v1)
+- Real-time HTTP PCM streaming (24kHz 16-bit mono) from Kokoro-FastAPI at the configured endpoint
 - Expressive annotation translation ([laugh], [chuckle], [sigh], [hmm], [gasp], [pause], [excited], [thoughtful])
   into Kokoro native IPA vocalizations ([Haha](/həhˈɑː/), [Hmm](/hˈmː/)), [pause:Xs], and [rate:X] tags
 - Automatic micro-pause chunk flushing on opening appraisals ("Oh, I got it!", "Aha!") for ~1.1s time-to-first-audio
@@ -281,21 +281,56 @@ def translate_expressive_annotations(text: str, for_kokoro: bool = True) -> str:
     return s
 
 
-def clean_text_for_tts(text: str, max_chars: int = 450, preserve_annotations: bool = False) -> str:
+def extract_speech_and_display_text(text: str) -> tuple[str, str]:
     """
-    Sanitizes raw LLM markdown output into clean, natural conversational prose suitable for TTS.
-    - Removes code blocks, inline backticks, markdown links, raw URLs, formatting symbols, and emojis.
-    - When preserve_annotations=True, keeps inline expressive tags ([laugh], [pause:0.3s], [word](/ipa/)) intact.
+    Separates the spoken summary (for Siri TTS) from the written content (for the Notch HUD).
+    Supports:
+    1. Explicit <speech>...</speech> tags.
+    2. Explicit 'Speech: ...' / 'Spoken: ...' lines.
+    3. Without an explicit spoken summary, preserve the original content.
+    """
+    if not text or not text.strip():
+        return "", ""
+
+    raw = text.strip()
+
+    # 1. Explicit <speech>...</speech> tag
+    speech_match = re.search(r"<speech>([\s\S]*?)</speech>", raw, re.IGNORECASE)
+    if speech_match:
+        speech = speech_match.group(1).strip()
+        display = re.sub(r"<speech>[\s\S]*?</speech>", "", raw, flags=re.IGNORECASE).strip()
+        return speech, display
+
+    # 2. Explicit 'Speech: ...' or 'Spoken: ...' line
+    speech_line_match = re.search(r"^(?:Speech|Spoken):\s*(.+)$", raw, re.IGNORECASE | re.MULTILINE)
+    if speech_line_match:
+        speech = speech_line_match.group(1).strip()
+        display = re.sub(r"^(?:Speech|Spoken):\s*.+$\n?", "", raw, flags=re.IGNORECASE | re.MULTILINE).strip()
+        return speech, display
+
+    # Sentence guessing can mistake list numbers, abbreviations, and expressive
+    # annotations for an entire answer. The sanitizer applies the length limit.
+    return raw, raw
+
+
+def clean_text_for_tts(text: str, max_chars: int = 240, preserve_annotations: bool = False) -> str:
+    """
+    Sanitizes raw LLM output into clean, natural conversational prose suitable for Siri TTS.
+    - Uses an explicit spoken summary when supplied with a visual audit card.
+    - Removes code blocks, inline backticks, markdown links, raw URLs, and bullet points.
+    - Caps speech length to snappy, single-breath answers (~1-2 sentences).
     """
     if not text or not text.strip():
         return ""
 
-    s = text.strip()
+    # Isolate spoken summary from visual notch card
+    speech_only, _ = extract_speech_and_display_text(text)
+    s = speech_only.strip() if speech_only else text.strip()
 
     # 1. Remove fenced code blocks ```...```
     s = re.sub(r"```[\s\S]*?```", " ", s)
 
-    # 2. Convert markdown links [label](https://...) -> label, without clobbering Kokoro IPA [word](/ipa/)
+    # 2. Convert markdown links [label](https://...) -> label
     s = re.sub(r"\[([^\]]+)\]\((?!\/[^\/)]+\/\))[^\)]+\)", r"\1", s)
 
     # 3. Remove raw HTTP/HTTPS/file URLs and clean trailing colons before URLs
@@ -303,19 +338,18 @@ def clean_text_for_tts(text: str, max_chars: int = 450, preserve_annotations: bo
     s = re.sub(r"https?://\S+", "", s)
     s = re.sub(r"file://\S+", "", s)
 
-    # 4. Strip inline code backticks, bold, italics, headings, blockquotes
+    # 4. Strip inline code backticks, bold, italics, headings, bullet markers
     s = s.replace("`", "")
     s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
     if not preserve_annotations:
         s = re.sub(r"\*([^*]+)\*", r"\1", s)
     else:
-        # Preserve *laughs* / *sighs* / *chuckles* if present, strip other single-asterisk italics
         s = re.sub(r"\*(?!(?:laugh|chuckle|sigh|giggle|gasp)[a-z]*\*)([^*]+)\*", r"\1", s, flags=re.I)
     s = re.sub(r"__([^_]+)__", r"\1", s)
     s = re.sub(r"^#+\s*", "", s, flags=re.MULTILINE)
-    s = re.sub(r"^\s*[-*•]\s+", "", s, flags=re.MULTILINE)
+    s = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s+", "", s, flags=re.MULTILINE)
 
-    # 5. Strip emojis and non-speech dingbats so TTS doesn't read emoji names aloud
+    # 5. Strip emojis and non-speech dingbats
     s = re.sub(
         r"[\U00010000-\U0010ffff"
         r"\u2600-\u27bf"
@@ -330,7 +364,7 @@ def clean_text_for_tts(text: str, max_chars: int = 450, preserve_annotations: bo
     s = re.sub(r"(?:\.\s*){2,}", "... " if preserve_annotations else ". ", s)
     s = re.sub(r"\s+", " ", s).strip()
 
-    # 7. Cap length at a clean sentence boundary so voice replies remain snappy
+    # 7. Cap length at 1-2 sentences so voice replies remain snappy
     if len(s) > max_chars:
         truncated = s[:max_chars]
         last_period = max(truncated.rfind(". "), truncated.rfind("! "), truncated.rfind("? "))
@@ -567,7 +601,7 @@ class TTSService:
 
     def _build_tts_command(self, text: str, voice: str, rate: int) -> Optional[List[str]]:
         if is_kokoro_voice(voice):
-            base_url = getattr(settings, "tts_base_url", "http://100.75.149.115:8880/v1")
+            base_url = getattr(settings, "tts_base_url", "http://127.0.0.1:8880/v1")
             speed = round(max(0.5, min(2.5, rate / 190.0)), 2)
             return [
                 sys.executable,
@@ -598,7 +632,7 @@ class TTSService:
 
     def list_kokoro_remote_voices(self) -> List[str]:
         """Fetches live voice IDs from the remote Kokoro-FastAPI server if reachable."""
-        base_url = getattr(settings, "tts_base_url", "http://100.75.149.115:8880/v1").rstrip("/")
+        base_url = getattr(settings, "tts_base_url", "http://127.0.0.1:8880/v1").rstrip("/")
         try:
             with httpx.Client(timeout=1.5) as client:
                 resp = client.get(f"{base_url}/audio/voices")

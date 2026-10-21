@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock
 from app.config import settings
 from app.core.tts import (
     clean_text_for_tts,
+    extract_speech_and_display_text,
     is_kokoro_voice,
     resolve_siri_voice,
     translate_expressive_annotations,
@@ -13,6 +14,32 @@ from app.core.config_manager import KEY_ALIASES, get_current_config
 
 
 class TestTTSSanitizer(unittest.TestCase):
+    def test_numbered_instructions_keep_the_actual_instructions(self):
+        raw = "1. Open Settings.\n2) Select Privacy and Security."
+        self.assertEqual(clean_text_for_tts(raw), "Open Settings. Select Privacy and Security.")
+
+    def test_plain_response_preserves_followup_sentence(self):
+        self.assertEqual(
+            clean_text_for_tts("Done. Your files are in Downloads."),
+            "Done. Your files are in Downloads.",
+        )
+
+    def test_explicit_summary_excludes_visual_card(self):
+        for raw in (
+            "<speech>Done. The file is saved.</speech>\n\n**Report**\n- Saved report.md",
+            "Spoken: Done. The file is saved.\n\n**Report**\n- Saved report.md",
+        ):
+            self.assertEqual(clean_text_for_tts(raw), "Done. The file is saved.")
+            self.assertEqual(
+                extract_speech_and_display_text(raw)[1], "**Report**\n- Saved report.md",
+            )
+
+    def test_fallback_still_limits_long_responses(self):
+        raw = "The report is ready. " * 30
+        cleaned = clean_text_for_tts(raw)
+        self.assertTrue(cleaned.startswith("The report is ready."))
+        self.assertLessEqual(len(cleaned), 241)
+
     def test_strips_urls_and_trailing_colon(self):
         raw = "Your favorite theme song is available here: https://www.youtube.com/watch?v=b-HvWLU2Va4&list=RDb-HvWLU2Va4"
         cleaned = clean_text_for_tts(raw)

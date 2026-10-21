@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maxi-ai"
-version = "0.2.0"
-description = "Pluggable, ultra-fast cross-platform background AI agent daemon with native MCP tools and streaming voice"
+dynamic = ["version"]
+description = "Voice-controlled desktop assistant with a native macOS HUD and MCP tools"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -75,3 +75,15 @@ packages = ["app"]
 
 [tool.hatch.build.targets.wheel.sources]
 "app/sounds" = "app/sounds"
+
+[tool.hatch.version]
+path = "app/__init__.py"
+
+# maxi hud builds these sources after a wheel install, including on a fresh Mac.
+[tool.hatch.build.targets.wheel.force-include]
+"frontends/macos/Package.swift" = "frontends/macos/Package.swift"
+"frontends/macos/Sources" = "frontends/macos/Sources"
+
+[tool.hatch.build.targets.sdist]
+include = ["/app", "/frontends/macos/Package.swift", "/frontends/macos/Sources", "/scripts", "/tests", "/assets", "/README.md", "/CHANGELOG.md", "/LICENSE", "/.env.example", "/pyproject.toml", "/requirements.txt", "/docs", "/releases", "/.maxi/mcp_config.example.json", "/.maxi/skills"]
+exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store"]

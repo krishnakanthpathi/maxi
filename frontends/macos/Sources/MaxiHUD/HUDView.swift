@@ -28,64 +28,154 @@ struct FiveBandWaveformView: View {
                 Capsule(style: .continuous)
                     .fill(accentColor)
                     .frame(width: 3.2, height: isAnimated ? height : 4.5)
-                    .animation(.interactiveSpring(response: 0.08, dampingFraction: 0.62), value: height)
+                    .animation(isAnimated ? .interactiveSpring(response: 0.08, dampingFraction: 0.62) : nil, value: height)
             }
         }
         .frame(height: 20)
     }
 }
 
+func stripSpeechTag(from text: String) -> String {
+    var result = text
+    let speechPattern = #"<speech>[\s\S]*?</speech>"#
+    if let regex = try? NSRegularExpression(pattern: speechPattern, options: .caseInsensitive) {
+        let nsString = result as NSString
+        let range = NSRange(location: 0, length: nsString.length)
+        result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
+    }
+    let imgPattern = #"!\[.*?\]\([^\)]+\)"#
+    if let regex = try? NSRegularExpression(pattern: imgPattern, options: .caseInsensitive) {
+        let nsString = result as NSString
+        let range = NSRange(location: 0, length: nsString.length)
+        result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
+    }
+    return result.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func formatArgSummary(_ args: [String: Any]) -> String? {
+    guard !args.isEmpty else { return nil }
+    if let msg = args["message"] as? String, !msg.isEmpty {
+        let trimmed = msg.replacingOccurrences(of: "\n", with: " ")
+        return trimmed.count > 26 ? String(trimmed.prefix(23)) + "..." : trimmed
+    }
+    if let r = args["recipient"] as? String, !r.isEmpty {
+        return r
+    }
+    if let q = args["query"] as? String, !q.isEmpty {
+        let trimmed = q.replacingOccurrences(of: "\n", with: " ")
+        return trimmed.count > 22 ? String(trimmed.prefix(19)) + "..." : trimmed
+    }
+    if let app = args["appName"] as? String ?? args["application"] as? String, !app.isEmpty {
+        return app
+    }
+    if let p = args["path"] as? String, !p.isEmpty {
+        return (p as NSString).lastPathComponent
+    }
+    return nil
+}
+
 struct ToastCardView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header row: User transcript + Close button
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.38, green: 0.85, blue: 0.98))
-                    .padding(.top, 2)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sum")
+                    .font(.system(size: 14, weight: .semibold))
+                    .accessibilityLabel("Maxi summation logo")
+                Text("Maxi")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
 
-                Text(state.transcript.isEmpty ? "Listening..." : state.transcript)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: { state.clearContext() }) {
+                    controlIcon(state.contextClearedFeedback ? "checkmark" : "plus")
+                }
+                .buttonStyle(HUDButtonStyle(isSelected: state.contextClearedFeedback))
+                .accessibilityLabel("New chat")
+                .help(state.contextClearedFeedback ? "New chat started" : "New chat · Clear recent conversation")
+
+                Button(action: { state.toggleAutoHide() }) {
+                    controlIcon(state.autoHideEnabled ? "pin" : "pin.fill")
+                }
+                .buttonStyle(HUDButtonStyle(isSelected: !state.autoHideEnabled))
+                .accessibilityLabel(state.autoHideEnabled ? "Pin response" : "Unpin response")
+                .help(state.autoHideEnabled ? "Keep this response visible" : "Allow response to auto-dismiss")
+
+                Button(action: { state.toggleAutoSpeech() }) {
+                    controlIcon(state.autoSpeechEnabled ? "speaker.wave.2" : "speaker.slash")
+                }
+                .buttonStyle(HUDButtonStyle(isSelected: state.autoSpeechEnabled))
+                .accessibilityLabel(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
+                .help(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
 
                 Button(action: { state.dismissToast() }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .frame(width: 18, height: 18)
-                        .background(Circle().fill(.white.opacity(0.08)))
+                    controlIcon("xmark")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HUDButtonStyle())
+                .accessibilityLabel("Dismiss response")
+                .help("Dismiss response")
             }
 
-            // Real-time & completed tool execution badges
-            if !state.toolsUsed.isEmpty || state.currentExecutingTool != nil {
+            HStack(alignment: .top, spacing: 10) {
+                Text(state.transcript.isEmpty ? "Listening…" : state.transcript)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+
+                if !state.transcript.isEmpty {
+                    Button(action: {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(state.transcript, forType: .string)
+                        state.copiedPromptFeedback = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { state.copiedPromptFeedback = false }
+                    }) {
+                        controlIcon(state.copiedPromptFeedback ? "checkmark" : "doc.on.clipboard")
+                    }
+                    .buttonStyle(HUDButtonStyle(isSelected: state.copiedPromptFeedback))
+                    .accessibilityLabel("Copy prompt")
+                    .help(state.copiedPromptFeedback ? "Prompt copied" : "Copy prompt")
+                }
+            }
+
+            if let img = state.qrImage {
+                VStack(spacing: 10) {
+                    Image(nsImage: img)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFit()
+                        .frame(width: 175, height: 175)
+                        .padding(10)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .accessibilityLabel("WhatsApp pairing QR code")
+
+                    Label("Linked Devices · Refreshes in \(state.qrCountdown)s", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            } else if state.qrFilePath != nil {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading pairing QR code…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+
+            if !state.toolsUsed.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
-                        ForEach(state.toolsUsed, id: \.self) { tool in
-                            let isRunning = state.currentExecutingTool == tool
-                            HStack(spacing: 3.5) {
-                                Image(systemName: isRunning ? "arrow.triangle.2.circlepath" : "bolt.fill")
-                                    .font(.system(size: 8))
-                                Text(tool)
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            }
-                            .foregroundStyle(isRunning ? Color(red: 0.40, green: 0.88, blue: 1.0) : Color(red: 0.65, green: 0.92, blue: 0.75))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2.5)
-                            .background(
-                                Capsule()
-                                    .fill(isRunning ? Color(red: 0.12, green: 0.28, blue: 0.45).opacity(0.75) : Color(red: 0.16, green: 0.36, blue: 0.26).opacity(0.65))
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(isRunning ? Color(red: 0.40, green: 0.88, blue: 1.0).opacity(0.4) : Color.clear, lineWidth: 0.8)
-                                    )
-                            )
+                    HStack(spacing: 6) {
+                        ForEach(Array(state.toolsUsed.enumerated()), id: \.offset) { _, tool in
+                            Label(tool.replacingOccurrences(of: "_", with: " "), systemImage: "checkmark")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(Color.primary.opacity(0.05), in: Capsule())
                         }
                     }
                 }
@@ -93,25 +183,29 @@ struct ToastCardView: View {
 
             if !state.agentOutput.isEmpty {
                 Divider()
-                    .overlay(.white.opacity(0.10))
 
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(state.agentOutput)
-                        .font(.system(size: 12.5, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.95))
+                ScrollView(.vertical) {
+                    Text(LocalizedStringKey(stripSpeechTag(from: state.agentOutput)))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 115)
+                .frame(maxHeight: state.qrImage == nil ? 220 : 100)
 
-                // Footer actions: Latency + Stop Voice (if speaking) + Copy
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     if state.latencyMs > 0 {
-                        Text("\(Double(state.latencyMs) / 1000.0, specifier: "%.1f")s")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.42))
+                        Label("\(Double(state.latencyMs) / 1000.0, specifier: "%.1f")s", systemImage: "clock")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
                     }
-
+                    if !state.autoSpeechEnabled {
+                        Image(systemName: "speaker.slash")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Speech muted")
+                    }
                     Spacer()
 
                     if state.mode == .speaking {
@@ -119,84 +213,47 @@ struct ToastCardView: View {
                             WebSocketClient.shared.stopTTS()
                             state.handleTTSStop()
                         }) {
-                            Label("Stop Voice", systemImage: "speaker.slash.fill")
-                                .font(.system(size: 10.5, weight: .semibold))
-                                .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.55))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3.5)
-                                .background(Capsule().fill(.white.opacity(0.09)))
+                            Label("Stop Voice", systemImage: "stop.fill")
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 10)
+                                .frame(height: 28)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(HUDButtonStyle())
                     }
 
                     Button(action: {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(state.agentOutput, forType: .string)
+                        NSPasteboard.general.setString(stripSpeechTag(from: state.agentOutput), forType: .string)
                         state.copiedFeedback = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { state.copiedFeedback = false }
                     }) {
                         Label(state.copiedFeedback ? "Copied" : "Copy", systemImage: state.copiedFeedback ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(.white.opacity(0.08)))
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HUDButtonStyle(isSelected: state.copiedFeedback))
+                    .accessibilityLabel("Copy response")
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(width: 410)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(red: 0.06, green: 0.06, blue: 0.08).opacity(0.94))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.22),
-                                    .white.opacity(0.06)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.45), radius: 16, x: 0, y: 8)
-        )
-        .onHover { hovering in
-            state.setHovering(hovering)
-        }
+        .padding(18)
+        .frame(maxWidth: 540)
+        .maxiGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .onHover { state.setHovering($0) }
+    }
+
+    private func controlIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .medium))
+            .frame(width: 28, height: 28)
     }
 }
 
 struct MaxiPillBarView: View {
     @ObservedObject var state: AppState
 
-    private var accentColor: Color {
-        switch state.mode {
-        case .idle:
-            return state.wsConnected ? Color.white.opacity(0.45) : Color.orange.opacity(0.7)
-        case .recording(let locked):
-            return locked
-                ? Color(red: 1.0, green: 0.72, blue: 0.22) // Amber for hands-free lock
-                : Color(red: 0.22, green: 0.92, blue: 0.68) // Emerald-cyan for push-to-talk
-        case .processing:
-            return state.currentExecutingTool != nil
-                ? Color(red: 0.38, green: 0.82, blue: 1.0) // Bright cyan for real-time tool
-                : Color.white.opacity(0.70) // Subtle white for clean thinking
-        case .speaking:
-            return Color(red: 0.75, green: 0.48, blue: 1.0) // Violet
-        case .result:
-            return Color(red: 0.28, green: 0.88, blue: 0.65)
-        case .cancelled:
-            return Color(red: 0.98, green: 0.42, blue: 0.42)
-        }
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var statusText: String {
         switch state.mode {
@@ -208,7 +265,7 @@ struct MaxiPillBarView: View {
             return locked ? "Locked \(formatted)" : formatted
         case .processing:
             if let tool = state.currentExecutingTool {
-                return "\(tool)..."
+                return tool.replacingOccurrences(of: "_", with: " ")
             }
             return "Thinking..."
         case .speaking:
@@ -220,7 +277,6 @@ struct MaxiPillBarView: View {
         }
     }
 
-    // Audio level waveform is strictly for live recording or speaking audio
     private var isRecordingOrSpeaking: Bool {
         switch state.mode {
         case .recording, .speaking:
@@ -232,26 +288,26 @@ struct MaxiPillBarView: View {
 
     var body: some View {
         HStack(spacing: 8.5) {
-            // Left state icon
+            // Compact status indicator
             switch state.mode {
             case .idle:
-                Circle()
-                    .fill(state.wsConnected ? Color(red: 0.25, green: 0.90, blue: 0.62) : Color.orange)
-                    .frame(width: 7, height: 7)
+                Image(systemName: state.wsConnected ? "sum" : "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
                     .frame(width: 14, height: 14)
             case .recording(let locked):
                 if locked {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(accentColor)
+                        .foregroundStyle(.primary)
                         .frame(width: 14, height: 14)
                 }
             case .processing:
                 Group {
                     if state.currentExecutingTool != nil {
-                        Image(systemName: "bolt.fill")
+                        Image(systemName: "terminal.fill")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(accentColor)
+                            .foregroundStyle(.primary)
                     } else {
                         ProgressView()
                             .controlSize(.mini)
@@ -261,93 +317,99 @@ struct MaxiPillBarView: View {
             case .speaking:
                 Image(systemName: "waveform")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(.primary)
                     .frame(width: 14, height: 14)
             case .result:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(.primary)
                     .frame(width: 14, height: 14)
             case .cancelled:
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(.secondary)
                     .frame(width: 14, height: 14)
             }
 
-            // Detected App Icon badge in recording section
+            // Show the app icon directly, without a surrounding badge.
             if case .recording = state.mode {
                 if let icon = state.activeAppIcon ?? (state.contextInfo.appName.isEmpty ? nil : getAppIcon(for: state.contextInfo.appName)) {
                     HStack(spacing: 3) {
                         Image(nsImage: icon)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 14, height: 14)
-                            .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
-                            )
+                            .frame(width: 20, height: 20)
 
                         if state.contextInfo.hasSelection {
                             Circle()
-                                .fill(Color(red: 0.22, green: 0.92, blue: 0.68))
+                                .fill(Color.primary.opacity(0.75))
                                 .frame(width: 4, height: 4)
                         }
                     }
-                    .padding(.horizontal, 4.5)
-                    .padding(.vertical, 2.5)
-                    .background(Capsule().fill(.white.opacity(0.08)))
                 }
             }
 
-            // 5-band audio level visualizer (only during audio recording or speaking)
+            // Live audio levels
             if isRecordingOrSpeaking {
                 FiveBandWaveformView(
                     levels: state.audioLevels,
-                    accentColor: accentColor,
-                    isAnimated: true
+                    accentColor: .primary,
+                    isAnimated: !reduceMotion
                 )
             }
 
-            // Real-time Tool Calling badge during processing
+            // Tool Execution pill (no reload/spinner symbol, no steps)
             if state.mode == .processing, let tool = state.currentExecutingTool {
-                HStack(spacing: 4) {
-                    Image(systemName: "gearshape.2.fill")
-                        .font(.system(size: 9))
-                    Text(tool)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                HStack(spacing: 6) {
+                    // Tool Name (Full, Unhidden, Monospaced)
+                    Text(tool.replacingOccurrences(of: "_", with: " "))
+                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    // Key Argument summary preview if available
+                    if let argSummary = formatArgSummary(state.currentToolArgs) {
+                        Text(argSummary)
+                            .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                .foregroundStyle(Color(red: 0.45, green: 0.88, blue: 1.0))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2.5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(Color(red: 0.12, green: 0.26, blue: 0.40).opacity(0.75))
+                        .fill(Color.primary.opacity(0.06))
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color(red: 0.38, green: 0.82, blue: 1.0).opacity(0.4), lineWidth: 0.8)
+                                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
                         )
                 )
             } else {
                 // Status / Hint label
                 Text(statusText)
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(state.mode == .idle ? 0.72 : 0.95))
+                    .foregroundStyle(state.mode == .idle ? Color.secondary : Color.primary)
                     .lineLimit(1)
             }
+
+            // Quick speech status toggle button
+            Button(action: {
+                state.toggleAutoSpeech()
+            }) {
+                Image(systemName: state.autoSpeechEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(HUDButtonStyle())
+            .accessibilityLabel(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
+            .help(state.autoSpeechEnabled ? "Auto-Speech active (click to mute)" : "Auto-Speech muted (click to unmute)")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7.5)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Color(red: 0.05, green: 0.05, blue: 0.07).opacity(0.92))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(accentColor.opacity(state.mode == .idle ? 0.22 : 0.65), lineWidth: 1.1)
-                )
-                .shadow(color: .black.opacity(0.42), radius: 10, x: 0, y: 4)
-        )
+        .padding(.leading, 16)
+        .padding(.trailing, 7)
+        .padding(.vertical, 7)
+        .maxiGlass(in: Capsule(style: .continuous), interactive: true)
+        .contentShape(Capsule())
         .onTapGesture {
             if state.mode == .speaking {
                 WebSocketClient.shared.stopTTS()
@@ -358,6 +420,37 @@ struct MaxiPillBarView: View {
                 }
             }
         }
+        .contextMenu {
+            Button(action: { state.clearContext() }) {
+                Label("New Chat", systemImage: "plus")
+            }
+            Divider()
+            Button(action: { state.toggleAutoHide() }) {
+                if state.autoHideEnabled {
+                    Label("Auto-Hide Results: Enabled", systemImage: "checkmark")
+                } else {
+                    Label("Auto-Hide Results: Disabled (Pinned)", systemImage: "pin.fill")
+                }
+            }
+            Button(action: { state.toggleAutoSpeech() }) {
+                if state.autoSpeechEnabled {
+                    Label("Auto-Speech (Read Aloud): Enabled", systemImage: "checkmark")
+                } else {
+                    Label("Auto-Speech (Read Aloud): Disabled", systemImage: "speaker.slash")
+                }
+            }
+            Divider()
+            Button("Position: Bottom Dock") {
+                state.setPosition(.bottomDock)
+            }
+            Button("Position: Top Notch") {
+                state.setPosition(.topNotch)
+            }
+            Button(state.alwaysShowIdlePill ? "Hide Idle Pill" : "Always Show Idle Pill") {
+                state.alwaysShowIdlePill.toggle()
+                state.onLayoutChange?()
+            }
+        }
     }
 }
 
@@ -365,37 +458,44 @@ typealias WillowPillBarView = MaxiPillBarView
 
 struct HUDView: View {
     @ObservedObject var state = AppState.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 10) {
-            if state.positionMode == .bottomDock {
-                Spacer(minLength: 0)
-                if state.showToast {
-                    ToastCardView(state: state)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity),
-                            removal: .opacity.combined(with: .scale(scale: 0.96))
-                        ))
+        HUDGlassGroup {
+            VStack(spacing: 14) {
+                if state.positionMode == .bottomDock {
+                    Spacer(minLength: 0)
+                    if state.showToast {
+                        ToastCardView(state: state)
+                            .transition(.asymmetric(
+                                insertion: reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity),
+                                removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96))
+                            ))
+                    }
+                    if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
+                        MaxiPillBarView(state: state)
+                    }
+                } else {
+                    if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
+                        MaxiPillBarView(state: state)
+                    }
+                    if state.showToast {
+                        ToastCardView(state: state)
+                            .transition(.asymmetric(
+                                insertion: reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity),
+                                removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96))
+                            ))
+                    }
+                    Spacer(minLength: 0)
                 }
-                if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
-                    MaxiPillBarView(state: state)
-                }
-            } else {
-                if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
-                    MaxiPillBarView(state: state)
-                }
-                if state.showToast {
-                    ToastCardView(state: state)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .opacity.combined(with: .scale(scale: 0.96))
-                        ))
-                }
-                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: state.positionMode == .bottomDock ? .bottom : .top)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(width: 460, height: 320)
+        .transaction { transaction in
+            if reduceMotion { transaction.animation = nil }
+        }
     }
 }

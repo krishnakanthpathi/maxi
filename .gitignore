@@ -46,3 +46,15 @@ Thumbs.db
 *.xcworkspace
 frontends/macos/dist/
 
+# Local runtime state is never part of a release.
+data/
+qr.png
+.maxi/*.pid
+.maxi/*.db*
+
+# Hosted landing page has an independent source repository.
+sites/
+
+
+# Per-machine MCP server paths and credentials.
+.maxi/mcp_config.json

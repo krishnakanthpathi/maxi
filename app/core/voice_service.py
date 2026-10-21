@@ -17,6 +17,8 @@ Willow-inspired Capabilities:
 6. Real-Time 5-Band Audio Level Monitor (`AudioLevelMonitor`) & Siri TTS output.
 """
 
+from __future__ import annotations
+
 import io
 import os
 import re
@@ -207,6 +209,11 @@ class MaxiVoiceService:
         # Concurrency & dispatch state
         self._is_dispatching: bool = False
         self._active_future: Optional[concurrent.futures.Future] = None
+        self._active_futures: set[concurrent.futures.Future] = set()
+        self._active_tasks: set[asyncio.Task] = set()
+        # Workers retain their generation across recording, STT, and dispatch.
+        # Escape invalidates it permanently, even after another recording starts.
+        self._command_generation: int = 0
         self.lock = threading.RLock()
         self._stream_lock = threading.Lock()
         self._standby_lock = threading.Lock()
@@ -241,6 +248,31 @@ class MaxiVoiceService:
                 ),
             )
         return self._http_client
+
+    def _is_command_current(self, generation: int) -> bool:
+        with self.lock:
+            return generation == self._command_generation
+
+    def _broadcast_for_command(self, generation: int, msg: dict):
+        with self.lock:
+            if self._is_command_current(generation):
+                self._broadcast(msg)
+
+    def _cancel_active_commands(self):
+        with self.lock:
+            self._command_generation += 1
+            tasks = list(self._active_tasks)
+            futures = set(self._active_futures)
+            if self._active_future is not None:
+                futures.add(self._active_future)
+
+        for task in tasks:
+            try:
+                task.get_loop().call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                pass  # The owning loop has already stopped.
+        for future in futures:
+            future.cancel()
 
     def _prewarm_stt_connection(self):
         """Pre-warms the TCP+TLS socket to the configured Voice STT provider on startup."""
@@ -652,6 +684,33 @@ class MaxiVoiceService:
         self._broadcast({"event": "voice_stop", "cancelled": True, "reason": reason})
         logger.info(f"🚫 Voice recording cancelled ({reason}).")
 
+    def abort_current_command(self, reason: str = "esc"):
+        """Immediately abort any active recording, STT transcription, LLM processing, or TTS speech."""
+        logger.info(f"🛑 Aborting active voice command (reason: {reason})...")
+        self._cancel_active_commands()
+        self.right_option_pressed = False
+        self.ctrl_pressed = False
+        self.space_pressed = False
+
+        # 1. Stop audio recording if in progress
+        if self.is_ptt_recording:
+            self.cancel_recording(reason=reason)
+
+        # 2. Stop TTS speech
+        if tts_service.is_speaking:
+            tts_service.stop()
+
+        # 3. Reset HTTP pool if STT was hung
+        old_client = self._http_client
+        self._http_client = None
+        if old_client is not None:
+            threading.Thread(target=self._safe_close_http, args=(old_client,), daemon=True).start()
+
+        # 4. Broadcast cancellation to HUD
+        self._broadcast({"event": "voice_stop", "cancelled": True, "reason": reason})
+        self._broadcast({"event": "voice_idle"})
+        self._broadcast({"event": "hud_dismiss"})
+
     def stop_recording(self):
         """Stops Push-to-Talk gathering, closes mic outside lock, unducks audio, and initiates execution."""
         chunks = []
@@ -664,6 +723,7 @@ class MaxiVoiceService:
             chunks = list(self.ptt_audio_buffer)
             self.ptt_audio_buffer = []
             captured_ctx = self.active_context
+            command_generation = self._command_generation
 
         self._close_mic_stream()
         threading.Thread(target=audio_ducker.unduck, daemon=True).start()
@@ -677,19 +737,28 @@ class MaxiVoiceService:
 
         threading.Thread(
             target=self._process_ptt_recording,
-            args=(chunks, captured_ctx),
+            args=(chunks, captured_ctx, command_generation),
             daemon=True,
         ).start()
 
-    def _process_ptt_recording(self, chunks: List[np.ndarray], captured_ctx: Optional[CapturedContext] = None):
+    def _process_ptt_recording(
+        self, chunks: List[np.ndarray], captured_ctx: Optional[CapturedContext] = None,
+        command_generation: Optional[int] = None,
+    ):
+        with self.lock:
+            if command_generation is None:
+                command_generation = self._command_generation
+        if not self._is_command_current(command_generation):
+            return
+
         if not chunks or np is None:
-            self._broadcast({"event": "voice_idle"})
+            self._broadcast_for_command(command_generation, {"event": "voice_idle"})
             return
 
         audio_data = np.concatenate(chunks, axis=0)
         if len(audio_data) < SAMPLE_RATE * 0.28:
             logger.info("No recognizable speech detected (recording <280ms).")
-            self._broadcast({"event": "voice_idle"})
+            self._broadcast_for_command(command_generation, {"event": "voice_idle"})
             return
 
         duration_s = len(audio_data) / float(SAMPLE_RATE)
@@ -699,13 +768,23 @@ class MaxiVoiceService:
 
         if peak < 0.004 or rms < 0.0006:
             logger.info(f"No speech energy detected in {duration_s:.2f}s audio (rms={rms:.4f}, peak={peak:.4f}).")
-            self._broadcast({"event": "voice_idle"})
+            self._broadcast_for_command(command_generation, {"event": "voice_idle"})
             return
 
-        self._broadcast({"event": "voice_processing"})
+        if not self._is_command_current(command_generation):
+            logger.info("Voice processing aborted before transcription.")
+            return
+
+        self._broadcast_for_command(command_generation, {"event": "voice_processing"})
         t0 = time.perf_counter()
         extra_terms = captured_ctx.extract_proper_nouns() if captured_ctx else []
-        transcript = self._transcribe(audio_data, extra_terms=extra_terms)
+        transcript = self._transcribe(
+            audio_data, extra_terms=extra_terms, command_generation=command_generation,
+        )
+
+        if not self._is_command_current(command_generation):
+            logger.info("Voice processing aborted after transcription.")
+            return
         cleaned_lower = (transcript or "").strip().lower().rstrip(".!?")
         if (
             not transcript
@@ -713,12 +792,12 @@ class MaxiVoiceService:
             or (rms < 0.0035 and cleaned_lower in ("thank you", "thanks for watching", "bye"))
         ):
             logger.info("No recognizable speech detected.")
-            self._broadcast({"event": "voice_idle"})
+            self._broadcast_for_command(command_generation, {"event": "voice_idle"})
             return
 
         stt_ms = round((time.perf_counter() - t0) * 1000, 1)
         logger.info(f"🗣️ Push-to-Talk Transcript ({stt_ms}ms): \"{transcript}\"")
-        self._broadcast({
+        self._broadcast_for_command(command_generation, {
             "event": "voice_transcript",
             "transcript": transcript,
             "stt_ms": stt_ms,
@@ -727,16 +806,23 @@ class MaxiVoiceService:
         # Fast-path Willow SmartInsertions: "Dictate: <text>" or "Type this: <text>"
         m_dictate = DIRECT_DICTATION_REGEX.match(transcript.strip())
         if m_dictate:
+            if not self._is_command_current(command_generation):
+                return
             dictated_text = m_dictate.group(1).strip()
             ok = text_injector.inject_text(dictated_text, restore_clipboard=True)
             out_msg = dictated_text
-            self._broadcast({
+            self._broadcast_for_command(command_generation, {
                 "event": "voice_result",
                 "transcript": transcript,
                 "output": out_msg,
                 "tools": ["inject_text_at_cursor"],
             })
-            play_sound(settings.voice_finish_sound)
+            if self._is_command_current(command_generation):
+                play_sound(settings.voice_finish_sound)
+            return
+
+        if not self._is_command_current(command_generation):
+            logger.info("Voice dispatch aborted before agent execution.")
             return
 
         self._dispatch_command(
@@ -744,13 +830,17 @@ class MaxiVoiceService:
             source="voice:hotkey",
             trigger_transcript=transcript,
             captured_ctx=captured_ctx,
+            command_generation=command_generation,
         )
 
     # =========================================================================
     # STT Transcription & Agent Execution
     # =========================================================================
 
-    def _transcribe(self, audio_data: np.ndarray, extra_terms: Optional[List[str]] = None) -> str:
+    def _transcribe(
+        self, audio_data: np.ndarray, extra_terms: Optional[List[str]] = None,
+        command_generation: Optional[int] = None,
+    ) -> str:
         """
         Sends captured audio over the pre-warmed HTTP client to Voice STT
         and applies deterministic Glossary phrase replacements on the transcript.
@@ -778,6 +868,8 @@ class MaxiVoiceService:
         }
 
         for attempt in range(2):
+            if command_generation is not None and not self._is_command_current(command_generation):
+                return ""
             try:
                 files = {"file": ("command.wav", wav_bytes, "audio/wav")}
                 client = self._get_http_client()
@@ -805,11 +897,17 @@ class MaxiVoiceService:
         source: str = "voice:hotkey",
         trigger_transcript: str = "",
         captured_ctx: Optional[CapturedContext] = None,
+        command_generation: Optional[int] = None,
     ):
         """Dispatches formatted voice prompt + active window context to the main Maxi agent."""
         from app.core.agent import agent
 
-        self._is_dispatching = True
+        with self.lock:
+            if command_generation is None:
+                command_generation = self._command_generation
+            if not self._is_command_current(command_generation):
+                return
+            self._is_dispatching = True
         t0 = time.perf_counter()
         agent_output = ""
         tools_used = []
@@ -819,7 +917,7 @@ class MaxiVoiceService:
 
         def on_tool_start(tool_name: str, args: dict):
             logger.info(f"⚡ [Real-time Tool Start]: {tool_name}")
-            self._broadcast({
+            self._broadcast_for_command(command_generation, {
                 "event": "tool_start",
                 "tool": tool_name,
                 "args": args if isinstance(args, dict) else {},
@@ -827,45 +925,56 @@ class MaxiVoiceService:
 
         def on_tool_end(tool_name: str, result: str):
             logger.info(f"⚡ [Real-time Tool End]: {tool_name}")
-            self._broadcast({
+            self._broadcast_for_command(command_generation, {
                 "event": "tool_end",
                 "tool": tool_name,
                 "status": "success" if not str(result).startswith("Error") else "error",
             })
 
         timeout_s = getattr(settings, "agent_timeout_seconds", 90.0)
+        future = None
+
+        async def _run_wrapped():
+            task = asyncio.current_task()
+            with self.lock:
+                if not self._is_command_current(command_generation):
+                    raise asyncio.CancelledError
+                self._active_tasks.add(task)
+            try:
+                return await agent.run(
+                    prompt=prompt,
+                    source=source,
+                    context_block=context_block,
+                    on_tool_start=on_tool_start,
+                    on_tool_end=on_tool_end,
+                )
+            finally:
+                with self.lock:
+                    self._active_tasks.discard(task)
+                    self._is_dispatching = bool(self._active_tasks or self._active_futures)
+
+        async def _run_with_timeout():
+            return await asyncio.wait_for(_run_wrapped(), timeout=timeout_s)
+
         try:
             if self._loop and self._loop.is_running():
-                future = asyncio.run_coroutine_threadsafe(
-                    agent.run(
-                        prompt=prompt,
-                        source=source,
-                        context_block=context_block,
-                        on_tool_start=on_tool_start,
-                        on_tool_end=on_tool_end,
-                    ),
-                    self._loop,
-                )
-                self._active_future = future
+                with self.lock:
+                    if not self._is_command_current(command_generation):
+                        return
+                    future = asyncio.run_coroutine_threadsafe(_run_with_timeout(), self._loop)
+                    self._active_futures.add(future)
+                    self._active_future = future
                 result = future.result(timeout=timeout_s)
-                agent_output = result.get("output", "")
-                tools_used = result.get("tools_used", [])
             else:
-                result = asyncio.run(
-                    agent.run(
-                        prompt=prompt,
-                        source=source,
-                        context_block=context_block,
-                        on_tool_start=on_tool_start,
-                        on_tool_end=on_tool_end,
-                    )
-                )
-                agent_output = result.get("output", "")
-                tools_used = result.get("tools_used", [])
+                result = asyncio.run(_run_with_timeout())
+            agent_output = result.get("output", "")
+            tools_used = result.get("tools_used", [])
         except (concurrent.futures.CancelledError, asyncio.CancelledError):
-            logger.info("Voice command cancelled due to daemon shutdown.")
+            logger.info("Voice command cancelled by user (Escape).")
             return
         except (TimeoutError, concurrent.futures.TimeoutError, asyncio.TimeoutError):
+            if future is not None:
+                future.cancel()
             logger.error(f"Voice command timed out after {timeout_s}s: \"{prompt}\"")
             agent_output = f"Command timed out after {int(timeout_s)} seconds. Please try again."
         except Exception as e:
@@ -873,10 +982,14 @@ class MaxiVoiceService:
             logger.error(f"Error dispatching voice command to main agent: {err_desc}", exc_info=True)
             agent_output = f"Execution error: {err_desc}"
         finally:
-            self._active_future = None
-            self._is_dispatching = False
+            with self.lock:
+                self._active_futures.discard(future)
+                if self._active_future is future:
+                    self._active_future = next(iter(self._active_futures), None)
+                self._is_dispatching = bool(self._active_tasks or self._active_futures)
 
-        if not self._running and self._loop is not None:
+        if not self._is_command_current(command_generation) or (not self._running and self._loop is not None):
+            logger.info("Discarding result because voice command was cancelled.")
             return
 
         total_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -884,22 +997,29 @@ class MaxiVoiceService:
         if tools_used:
             logger.info(f"🛠️ Tools executed: {', '.join(tools_used)}")
 
+        # Separate speech from display output for notch
+        from app.core.tts import extract_speech_and_display_text
+        spoken_part, display_part = extract_speech_and_display_text(agent_output)
+
         # Broadcast result to frontend HUD
-        self._broadcast({
+        self._broadcast_for_command(command_generation, {
             "event": "voice_result",
             "transcript": prompt,
-            "output": agent_output,
+            "output": display_part or agent_output,
             "tools": tools_used,
             "latency_ms": total_ms,
             "context": captured_ctx.to_dict() if captured_ctx and not captured_ctx.is_empty() else None,
         })
 
+        if not self._is_command_current(command_generation):
+            return
+
         # Play completion chime
         play_sound(settings.voice_finish_sound)
 
-        # Speak response aloud using Siri TTS
-        if getattr(settings, "enable_tts", True) and agent_output:
-            tts_service.speak(agent_output)
+        # Speak response aloud using Siri TTS (concise spoken summary only)
+        if getattr(settings, "enable_tts", True) and (spoken_part or agent_output):
+            tts_service.speak(spoken_part or agent_output)
 
     # =========================================================================
     # Keyboard Event Handlers (`RecordingHotkeyController`)
@@ -907,30 +1027,9 @@ class MaxiVoiceService:
 
     def _on_press(self, key):
         # 1. Escape key handling (`onCancelKeyPress`):
-        #    - If recording: cancel recording immediately
-        #    - If in-flight agent processing: cancel running future
-        #    - If TTS speaking: stop speech immediately
-        #    - Always broadcast `hud_dismiss` to close any visible HUD toast/pop-up
+        #    Immediately abort active recording, in-flight STT, LLM reasoning, tools, and speech
         if self._is_esc(key):
-            if self.is_ptt_recording:
-                self.right_option_pressed = False
-                self.ctrl_pressed = False
-                self.space_pressed = False
-                self.cancel_recording(reason="esc")
-                return
-
-            if self._active_future is not None and not self._active_future.done():
-                try:
-                    self._active_future.cancel()
-                except Exception:
-                    pass
-                self._broadcast({"event": "voice_stop", "cancelled": True, "reason": "esc"})
-                self._broadcast({"event": "voice_idle"})
-
-            if tts_service.is_speaking:
-                tts_service.stop()
-
-            self._broadcast({"event": "hud_dismiss"})
+            self.abort_current_command(reason="esc")
             return
 
         was_already_active = self._is_hotkey_active()
@@ -1038,18 +1137,14 @@ class MaxiVoiceService:
     def stop(self):
         """Gracefully stops all audio streams, active dispatches, and hotkey listeners without hanging."""
         self._running = False
+        self._cancel_active_commands()
         self.is_ptt_recording = False
         self.is_hands_free_locked = False
         self.right_option_pressed = False
         self.ctrl_pressed = False
         self.space_pressed = False
 
-        if self._active_future is not None:
-            try:
-                self._active_future.cancel()
-            except Exception:
-                pass
-            self._active_future = None
+        self._active_future = None
 
         tts_service.stop()
         threading.Thread(target=audio_ducker.unduck, daemon=True).start()

@@ -13,6 +13,10 @@ from app.core.mcp_client import mcp_manager
 from app.core.lmem_tools import get_lmem_tools
 
 logger = logging.getLogger("maxi.agent")
+RESET_REQUESTS = frozenset({
+    "new chat", "reset context", "reset conversation", "clear context",
+    "clear history", "new topic", "new session",
+})
 
 
 class MaxiAgent:
@@ -21,6 +25,7 @@ class MaxiAgent:
     def __init__(self):
         self.settings = settings
         self._history: List[BaseMessage] = []
+        self._history_generation = 0
         self._max_history_turns: int = 5  # Keeps past 5 conversation pairs (10 messages max)
 
     def get_history(self) -> List[BaseMessage]:
@@ -39,6 +44,7 @@ class MaxiAgent:
 
     def clear_history(self):
         """Clears short-term conversational session history."""
+        self._history_generation += 1
         self._history.clear()
         logger.info("Cleared short-term conversational history buffer.")
 
@@ -119,7 +125,7 @@ class MaxiAgent:
         """Execute prompt against OpenAI-compatible endpoint with MCP tool execution and 5-turn history."""
         # Check for explicit session reset request
         clean_prompt = prompt.strip().lower()
-        if clean_prompt in ("reset context", "reset conversation", "clear context", "clear history", "new topic", "new session"):
+        if clean_prompt in RESET_REQUESTS:
             self.clear_history()
             return {
                 "source": source,
@@ -131,6 +137,7 @@ class MaxiAgent:
                 "status": "success"
             }
 
+        history_generation = self._history_generation
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
         tools = self._get_all_tools()
@@ -224,10 +231,10 @@ class MaxiAgent:
 
             # Fallback confirmation if tools executed but no text returned
             if not output_text.strip() and executed_tools:
-                output_text = f"Executed {', '.join(executed_tools)} successfully."
+                output_text = "Done. Action completed successfully."
 
             # Persist to short-term sliding history
-            if output_text.strip():
+            if output_text.strip() and history_generation == self._history_generation:
                 self.append_turn(prompt, output_text)
 
             self._record_turn(
@@ -274,6 +281,11 @@ class MaxiAgent:
         on_tool_end: Optional[Callable[[str, str], Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """Stream token-by-token response over WebSockets, executing tool calls when requested."""
+        if prompt.strip().lower() in RESET_REQUESTS:
+            self.clear_history()
+            yield "Conversation context cleared. Starting fresh."
+            return
+        history_generation = self._history_generation
         await mcp_manager.ensure_connected()
         system_instruction = self._build_system_prompt(prompt=prompt, source=source)
         tools = self._get_all_tools()
@@ -370,12 +382,12 @@ class MaxiAgent:
 
             final_text = "".join(full_output).strip()
             if not final_text and executed_tools:
-                fallback = f"Executed {', '.join(executed_tools)} successfully."
+                fallback = "Done. Action completed successfully."
                 full_output.append(fallback)
                 yield fallback
                 final_text = fallback
 
-            if final_text:
+            if final_text and history_generation == self._history_generation:
                 self.append_turn(prompt, final_text)
 
             self._record_turn(

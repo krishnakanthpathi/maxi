@@ -1,176 +1,134 @@
-# Maxi ⚡
+# ∑ Maxi
 
-**Maxi** is an ultra-fast, pluggable cross-platform background AI agent daemon designed for macOS, Linux, and Windows workstations. It combines native OS control via the Model Context Protocol (MCP), a 3-chime audio feedback engine, real-time streaming speech recognition with Voice Activity Detection (VAD), and a decoupled frontend architecture.
+**A little less clicking.** A voice-controlled desktop assistant with a native macOS floating HUD, an OpenAI-compatible LLM backend, and tools supplied by your MCP servers.
 
-```
-  __  __              _ 
- |  \/  | __ ___  __ (_)
- | |\/| |/ _` \ \/ / | |
- | |  | | (_| |>  <  | |
- |_|  |_|\__,_/_/\_\ |_|
-```
+Hold **Right Option (⌥)**, say what you need, and release to send. Double-tap to lock hands-free recording; press **Esc** to cancel. The microphone opens for a recording session. Maxi does not listen for a wake word.
 
----
+**Current release:** `v0.3.0-beta.1` · [Release notes](releases/v0.3.0-beta.1.md) · [Changelog](CHANGELOG.md)
 
-## ⚡ Quick Start: One-Line Installer
+## Requirements
 
-Install and configure Maxi with a single command:
+- Python 3.10+ and a configured OpenAI-compatible LLM endpoint/model.
+- A Whisper-compatible transcription provider and key for voice input.
+- macOS 14+ for the native SwiftUI HUD. Liquid Glass uses macOS 26+; macOS 14/15 use a translucent material fallback.
+- The prebuilt HUD companion targets Apple Silicon. Intel Macs can build the included Swift source with Xcode Command Line Tools.
+- macOS Microphone access for recording and Accessibility/Input Monitoring access for the Python/terminal application running Maxi's shortcut listener. Text injection and context capture also need Accessibility access.
+- MCP servers are configured separately. Available desktop actions depend on those servers and their permissions.
 
-#### macOS & Linux (Terminal)
-```bash
-curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash
-```
+The macOS beta is unsigned and not notarized. The HUD companion requires the Python daemon; it is not a bundled Python application. Linux and Windows support the backend and platform shortcuts, without a native GUI in this release.
 
-#### Windows (PowerShell)
-```powershell
-irm https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.ps1 | iex
-```
+## Install the beta
 
-The installer automatically:
-1. Detects your platform (macOS, Linux, or Windows) and architecture.
-2. Resolves audio dependencies (`libportaudio2`, `libasound2` on Linux).
-3. Creates an isolated environment at `~/.maxi/venv`.
-4. Symlinks the `maxi` CLI into `~/.local/bin/maxi`.
-5. Configures native background service auto-start:
-   - **macOS**: `launchd` LaunchAgent (`~/Library/LaunchAgents/com.maxi.daemon.plist`)
-   - **Linux**: `systemd` user service (`~/.config/systemd/user/maxi.service`)
-
----
-
-## 🚀 The `maxi` CLI
-
-Control the background daemon from any terminal:
+Download the wheel and, on Apple Silicon, the optional HUD companion from [GitHub Releases](https://github.com/krishnakanthpathi/maxi/releases).
 
 ```bash
-maxi start                       # Start background daemon on http://127.0.0.1:4848
-maxi stop                        # Gracefully stop the background daemon
-maxi restart                     # Restart background daemon
-maxi status                      # Inspect daemon PID, health, loaded MCP tools, audio theme
-maxi hud                         # Open the modern web HUD in your default browser
-maxi config                      # View active LLM & Voice configuration
-maxi config preset ollama        # Switch to Ollama (Local Default on :11434 with gemma4:31b-cloud)
-maxi config preset groq          # Switch to Groq (Cloud ultra-fast LPU)
-maxi config set llm-url <url>    # Set custom OpenAI-compatible endpoint URL
-maxi config set llm-model <name> # Set model name
-maxi config set voice-key <key>  # Set Groq Whisper voice STT API key
-maxi config wizard               # Interactive terminal configuration wizard
-maxi run                         # Run in foreground (ideal for systemd or development)
+python3 -m venv ~/.maxi/venv
+~/.maxi/venv/bin/python -m pip install "$HOME/Downloads/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
+~/.maxi/venv/bin/maxi config wizard
+~/.maxi/venv/bin/maxi start
 ```
 
----
-
-## 🎙️ Voice, Wake Word & Hotkey Features
-
-### 1. Hands-Free Wake Word Auto-Catch ("Hey Maxi" & "Hey Siri")
-- **Continuous Hands-Free Detection**: Say **"Hey Maxi"** or **"Hey Siri"** hands-free from across the room without touching your keyboard.
-- **Automated Prompt Prefixing**: Every caught voice command is automatically normalized and prefixed with **"Hey Maxi,"** before function activation.
-- **Dual Utterance Support**:
-  - **Single-shot**: *"Hey Maxi, turn the volume up to 50"* — immediately catches, prefixes, and executes.
-  - **Two-stage conversational**: Say *"Hey Maxi"* -> *ding* chime alerts you -> speak your command -> executes!
-- **Zero-Disruption Ambient Filtering**: Background conversation and room noise without authorized wake words are silently discarded with zero false alarms.
-
-### 2. Hardware Push-to-Talk Hotkeys
-- **macOS**: Hold **Right Option (⌥)** (Dedicated modifier; ignores Ctrl+Space to eliminate IDE autocomplete collisions).
-- **Windows / Linux**: Hold **Control + Space**.
-- **Instant Dispatch**: Releasing the key stops recording and sends your command immediately.
-- **Typing Protection**: Brief accidental key brushes (<250ms) are silently discarded without playing chimes or dispatching.
-
-### 3. Tactile Audio Pipeline
-Every spoken interaction provides tactile auditory feedback:
-1. **Wake Chime** (`minimal_wake`): Fires the millisecond listening begins or wake word is caught.
-2. **Release / Send Chime** (`minimal_notification`): Fires when speech recording finishes.
-3. **Completion Chime** (`minimal_complete`): Fires after tools execute and final response text is generated.
-
-Sound themes can be auditioned and switched via the Web HUD or API:
-- `minimal` (Linear/Notion-style micro clicks)
-- `glass` (Airy crystal resonance)
-- `soft` (Warm, non-intrusive mellow chimes)
-- `scifi` (Jarvis-style digital chirp)
-- `zen` (Meditative singing bowl tone)
-- `synth` (Synthesized pure sine harmonic bloom & chord)
-
----
-
-## 🏗️ Architecture: Pluggable Frontends
-
-The backend operates as a headless, event-driven daemon (`localhost:4848`). Any frontend plugs directly into its REST and WebSocket (`ws://localhost:4848/ws`) APIs:
-
-```text
-maxi/
-├── app/                  # Headless Core Daemon Engine
-│   ├── api/              # REST + WebSocket endpoints
-│   ├── core/             # Agent, Voice Pipeline, MCP Client, Skills
-│   └── sounds/           # Bundled UI audio assets
-├── frontends/            # Pluggable Client Interfaces
-│   ├── web/              # Siri-style Browser HUD
-│   ├── macos/            # Native macOS Swift menu bar app & floating overlay
-│   └── linux/            # Linux desktop indicator & tray (Tauri / GTK)
-└── scripts/
-    └── install.sh        # Universal cross-platform curl installer
-```
-
-### WebSocket Protocol (`/ws`)
-Connected frontends receive real-time streaming events:
-- `voice_start`: Trigger pulsing orb animation.
-- `voice_interim_transcript`: Real-time streaming subtitles while speaking.
-- `voice_stop`: Transition orb to processing state.
-- `voice_result`: Final prompt, response text, execution latency, and tools used.
-- `chunk`: Incremental token streaming.
-
----
-
-## 📦 Python Packaging & PyPI Wheels
-
-Maxi uses modern PEP 517/621 packaging via `pyproject.toml`:
+Start your configured LLM server first. Configure speech transcription with:
 
 ```bash
-# Core headless daemon (lightweight, zero audio drivers)
-pip install maxi-ai
-
-# With push-to-talk voice & audio extras
-pip install "maxi-ai[voice]"
+~/.maxi/venv/bin/maxi config set voice-key YOUR_PROVIDER_KEY
 ```
 
-To build wheels locally:
+Unzip the macOS companion and open `Maxi.app`. If macOS blocks the unsigned beta, review the application in System Settings → Privacy & Security. Alternatively, build the included HUD source:
+
 ```bash
+xcode-select --install
+~/.maxi/venv/bin/maxi hud --rebuild
+```
+
+Add `~/.maxi/venv/bin` to your PATH to use the shorter `maxi` commands. For a core installation without microphone/hotkey dependencies, omit `[voice]` when installing the wheel.
+
+## Develop from source
+
+```bash
+git clone https://github.com/krishnakanthpathi/maxi.git
+cd maxi
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[voice]'
+mkdir -p ~/.maxi
+cp .env.example ~/.maxi/.env  # only when creating a new configuration
+.venv/bin/python -m app.cli config wizard
+.venv/bin/python -m app.cli run
+```
+
+In another terminal, run `.venv/bin/python -m app.cli hud`. Existing users should keep their `~/.maxi/.env` and MCP configuration. The source installers in `scripts/` preserve existing user configuration.
+
+## Everyday controls
+
+| Action | Control |
+| --- | --- |
+| Record a voice command | Hold Right Option on macOS; Control + Space on Linux/Windows |
+| Hands-free recording | Double-tap the configured shortcut; tap again to finish |
+| Cancel recording, speech, or active voice work | Esc |
+| Start a fresh conversation | New Chat (+) in the HUD, or New Chat in its menu |
+| Keep a response visible | Pin |
+| Pause spoken responses | Speaker toggle |
+| Insert dictated text at the cursor | Start the command with “Dictate:” |
+
+New Chat clears recent conversational context and stops active voice work. Late responses cannot refill the cleared context. Deliberately saved LightMem memories remain separate. Persistent memory is opt-in through the memory tools; automatic memory injection is not included in this release.
+
+## Configure models, memory, and tools
+
+```bash
+maxi config wizard
+maxi config preset ollama
+maxi config preset groq
+maxi config set llm-url http://localhost:11434/v1
+maxi config set llm-model llama3.2
+```
+
+The optional [LightMem](https://pypi.org/project/lmem/) integration requires a separately installed `lmem` CLI. Maxi exposes recall, answer, and explicit remember tools. Do not assume facts have been saved unless the memory tool confirms success.
+
+Put MCP configuration in `~/.maxi/mcp_config.json`. Start with `.maxi/mcp_config.example.json` and add servers you trust. A stdio server uses this structure:
+
+```json
+{
+  "mcpServers": {
+    "your-server": {
+      "command": "/absolute/path/to/server-command",
+      "args": ["/absolute/path/to/server.py"]
+    }
+  }
+}
+```
+
+Place custom Markdown skills in `~/.maxi/skills/`. Use the HUD menu to reload skills and MCP connections after changes. No third-party MCP server, Discord bot, WhatsApp service, or model runtime is bundled.
+
+## CLI and API
+
+```bash
+maxi --version
+maxi start
+maxi stop
+maxi restart
+maxi status
+maxi run
+maxi hud
+maxi hud stop
+maxi hud build
+maxi config
+maxi glossary
+```
+
+The daemon binds to `127.0.0.1:4848` by default. API documentation is at `http://127.0.0.1:4848/docs`; events are available at `ws://127.0.0.1:4848/ws`. Keep this local service on loopback; desktop tools may perform actions on the workstation.
+
+## Verify and build a release
+
+```bash
+.venv/bin/python -m pytest -q
+bash scripts/test_macos_hud.sh
 uv build
-# Generated artifacts in dist/:
-# - dist/maxi_ai-0.2.0-py3-none-any.whl
-# - dist/maxi_ai-0.2.0.tar.gz
+bash scripts/package_macos.sh
+python3 scripts/verify_release.py
 ```
 
----
+The wheel includes the Swift frontend source and bundled sound assets. Release distributions exclude private configuration, runtime history, databases, pairing QR codes, and build caches. See [release preparation](docs/RELEASING.md).
 
-## 🔧 Native MCP Tool Integration
+## License
 
-Maxi automatically connects to configured Model Context Protocol (MCP) servers (e.g., `native-assistant-mcp`) configured in `~/.maxi/mcp_config.json` or `.maxi/mcp_config.json`, exposing 70+ native capabilities:
-- Application focus & launching (`open_application`, `close_application`)
-- Workstation automation & window management (`focus_window`, `resize_window`)
-- Audio volume & media playback controls (`volume_set`, `media_control`)
-- Screen capture & clipboard operations (`take_screenshot`, `clipboard_read`)
-- Native notifications & alerts (`notify`, `say_speech`)
-
----
-
-## ⚙️ Configuration
-
-Environment variables can be set in `.env` or `~/.maxi/.env`:
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `OPENAI_BASE_URL` | `http://localhost:1234/v1` | LLM API endpoint (Ollama, LM Studio, Groq, OpenAI) |
-| `OPENAI_API_KEY` | `sk-local-no-key-required` | API key for LLM endpoint |
-| `OPENAI_MODEL` | `gemma-4-31b` | Target LLM model identifier |
-| `VOICE_BASE_URL` | `https://api.groq.com/openai/v1`| Speech-to-text API endpoint |
-| `VOICE_API_KEY` | *(read from GROQ_API_KEY)* | API key for Whisper transcription |
-| `VOICE_MODEL` | `whisper-large-v3-turbo` | Whisper model for fast STT |
-| `VOICE_START_SOUND` | `minimal_wake` | Audio played when listening starts |
-| `VOICE_RELEASE_SOUND`| `minimal_notification` | Audio played when listening stops/sends |
-| `VOICE_FINISH_SOUND` | `minimal_complete` | Audio played when result is ready |
-| `VOICE_AUTO_ENDPOINT`| `true` | Auto-detect 800ms silence and execute |
-
----
-
-## 📄 License
-
-MIT License. Designed and crafted for modern local workstations.
+[MIT](LICENSE). The ∑ mark is available as [SVG](assets/maxi-mark.svg).

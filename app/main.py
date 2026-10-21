@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app import __version__
 from app.api.routes import router as api_router
 from app.api.websocket import router as ws_router
 from app.core.mcp_client import mcp_manager
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version=__version__,
     description="Cross-platform background AI agent daemon with MCP tools and voice plugins",
     lifespan=lifespan
 )
@@ -71,7 +72,7 @@ app.include_router(ws_router)
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": settings.app_name, "version": "0.2.0"}
+    return {"status": "ok", "service": settings.app_name, "version": __version__}
 
 
 if __name__ == "__main__":

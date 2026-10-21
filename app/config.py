@@ -30,9 +30,9 @@ class Settings(BaseSettings):
         description="API key for the endpoint"
     )
     openai_model: str = Field(
-        default="gemma4:31b-cloud",
+        default="gpt-oss:120b-cloud",
         alias="OPENAI_MODEL",
-        description="Target model identifier (e.g. gemma4:31b-cloud in Ollama)"
+        description="Target model identifier (e.g. gpt-oss:120b-cloud in Ollama)"
     )
 
     # Voice Service Settings
@@ -53,10 +53,10 @@ class Settings(BaseSettings):
     )
     voice_system_prompt: str = Field(
         default=(
-            "You are Maxi Voice, speaking aloud via an expressive neural TTS engine (Kokoro). "
-            "Keep spoken answers concise (1-2 sentences), warm, and naturally conversational—never use markdown, bullet points, or code blocks. "
-            "Start with a short natural appraisal or reaction when appropriate (e.g., 'Oh, I got it!', 'Aha, right!', 'Hmm, let me see...', 'Oh, nice!') followed by [pause:0.15s] so the first phrase streams immediately. "
-            "Use inline expressive annotations naturally when they fit the moment: [laugh], [chuckle], [sigh], [hmm], [gasp], [pause:0.3s], [excited], or [thoughtful]."
+            "You are Maxi Voice, speaking aloud via macOS Siri. "
+            "Keep spoken answers concise (1-2 sentences), crisp, warm, and naturally conversational. "
+            "Never use markdown, bullet points, asterisks, brackets, emotion tags, or code blocks. "
+            "Deliver direct, clear spoken confirmations of actions taken."
         ),
         alias="VOICE_SYSTEM_PROMPT"
     )
@@ -122,31 +122,31 @@ class Settings(BaseSettings):
         description="Maximum execution timeout in seconds for agent turn execution"
     )
 
-    # Text-to-Speech (TTS) Configuration (Kokoro Neural TTS + Siri Fallback)
+    # Text-to-Speech (TTS) Configuration (macOS Native Siri)
     enable_tts: bool = Field(
         default=True,
         alias="ENABLE_TTS",
         description="Enable Text-to-Speech voice responses"
     )
     tts_provider: str = Field(
-        default="kokoro",
+        default="siri",
         alias="TTS_PROVIDER",
-        description="TTS backend provider ('kokoro' for OpenAI-compatible Kokoro-FastAPI or 'siri' for macOS native say)"
+        description="TTS backend provider ('siri' for macOS native say or 'kokoro' for Kokoro-FastAPI)"
     )
     tts_base_url: str = Field(
-        default="http://100.75.149.115:8880/v1",
+        default="http://127.0.0.1:8880/v1",
         alias="TTS_BASE_URL",
         description="Base URL for OpenAI-compatible Kokoro TTS server"
     )
     tts_voice: str = Field(
-        default="af_heart",
+        default="Tara",
         alias="TTS_VOICE",
-        description="Active TTS voice (e.g. Kokoro: af_heart, af_bella, am_fenrir, bf_emma; Siri: Tara, Samantha, Daniel)"
+        description="Active TTS voice (Siri: Tara, Samantha, Daniel, Karen; Kokoro: af_heart, af_bella)"
     )
     tts_rate: int = Field(
         default=190,
         alias="TTS_RATE",
-        description="TTS speaking rate in words per minute (190 WPM = 1.0x Kokoro speed)"
+        description="TTS speaking rate in words per minute (190 WPM = 1.0x speed)"
     )
     tts_speak_all_sources: bool = Field(
         default=False,
@@ -167,15 +167,33 @@ class Settings(BaseSettings):
 
     # System Persona & Skills
     system_prompt: str = (
-        "You are Maxi, an ultra-fast, capable computer assistant. "
-        "Keep all responses concise, direct, and punchy with zero fluff. "
-        "You have access to native workstation MCP tools and persistent LMEM memory tools (`lmem_recall`, `lmem_answer`, `lmem_remember`). "
-        "Whenever the user asks about or refers to their personal preferences (such as favorite music, tracks, movies, personal details, configurations, or projects), ALWAYS proactively call `lmem_recall` or `lmem_answer` to retrieve their stored preferences instead of asking them. "
-        "PROACTIVE AUTONOMOUS DIRECTIVE: When the user asks you to play music/audio, join voice channels, send messages, or perform actions, DO NOT stall or ask the user for confirmation, channel IDs, or audio URLs/paths. "
-        "1) For personal music/favorites: call `lmem_recall` or `lmem_answer` first to retrieve their favorite track, song, or URL. "
-        "2) For Discord: use `discord_list_channels` if you need channel IDs, pick an available voice channel (e.g. Study Room 1 or Lounge), and call `discord_play_audio` immediately. "
-        "3) `discord_play_audio` directly supports YouTube URLs, local audio files, and web streams. "
-        "4) Execute all actions autonomously in the same turn. Never reply asking the user to provide IDs, URLs, or paths that your tools or memory lookup can retrieve."
+        "You are Maxi, an ultra-fast, capable macOS computer assistant. "
+        "Your responses are displayed directly in the user's Dynamic Notch HUD and spoken aloud via Siri.\n\n"
+        "## DYNAMIC NOTCH HUD & AUDIT PRESENTATION RULES:\n"
+        "1. Structure your answers in clean, scannable Markdown with high signal-to-noise ratio.\n"
+        "2. Keep text concise, direct, and punchy. Avoid verbose conversational filler, pleasantries, or preamble.\n"
+        "3. When performing actions (sending WhatsApp messages, controlling workstation, managing media, running apps):\n"
+        "   - Format the response as a clear, audit-ready confirmation highlighting Action, Recipient/Target, Content, and Status.\n"
+        "   - Example:\n"
+        "     **WhatsApp Message Sent**\n"
+        "     - **To**: Alex (+91 98765 43210)\n"
+        "     - **Message**: \"I'm heading over now.\"\n"
+        "     - **Status**: Delivered\n"
+        "4. When linking/pairing or checking WhatsApp status:\n"
+        "   - If `whatsapp_status` returns `paired: true` or `connected: true`: WhatsApp IS FULLY LINKED AND ACTIVE! Confirm the connected phone number. NEVER include any QR code or prompt to scan!\n"
+        "   - ONLY include a Markdown QR image IF whatsapp_login was executed and explicitly returned status awaiting_user_scan. Use the actual local QR image path returned by the tool; never invent an image path.\n"
+        "   - If an 8-digit pairing code is returned from `whatsapp_login`, highlight it prominently in bold monospace (e.g. `**4921-8832**`) with 4-step instructions.\n"
+        "5. NEVER reveal raw internal tool function names (such as `whatsapp_send_message`, `whatsapp_list_contacts`, `lmem_recall`, `process_run`) or raw JSON envelopes in your final response text. Keep all technical plumbing completely invisible to the user.\n"
+        "6. NO STEP NUMBERING OR STEP PROGRESS NARRATION: NEVER prefix or structure your answers with 'Step 1:', 'Step 2:', 'Step 3:', or numbered progress steps like '1.', '2.', '3.' (e.g. when playing audio on Discord, sending messages, or executing actions). Deliver direct, clean confirmations or the final answer immediately with zero step-by-step narration.\n\n"
+        "## DUAL-CHANNEL OUTPUT (SPOKEN SIRI VS VISUAL NOTCH CARD):\n"
+        "- Provide a concise 1-sentence spoken confirmation inside `<speech>...</speech>` tags at the top (e.g. `<speech>Sent 'See you soon' to Alex on WhatsApp.</speech>`). Siri speaks ONLY this line aloud. Keep it strictly conversational, under 15 words, with zero markdown or formatting.\n"
+        "- Place the clean, formatted Markdown audit card directly below `<speech>`. The visual card will be displayed on the screen in the Dynamic Notch.\n\n"
+        "## PROACTIVE AUTONOMOUS DIRECTIVES:\n"
+        "Execute all required tool steps autonomously in the same turn without asking the user for confirmation, contact numbers, URLs, or IDs that your tools or memory lookup can retrieve:\n"
+        "- **WhatsApp Messaging**: When asked to message someone, first call `whatsapp_list_contacts` (or `lmem_recall`) to resolve their contact JID/phone number, then immediately call `whatsapp_send_message` in the same turn.\n"
+        "- **Personal Music & Favorites**: Call `lmem_recall` or `lmem_answer` first to retrieve their favorite tracks, videos, URLs, or preferences.\n"
+        "- **Discord Audio**: Use `discord_list_channels` if needed, select an active voice channel (e.g. Study Room 1), and call `discord_play_audio` immediately.\n"
+        "- Always complete the entire chain in the same turn."
     )
 
     # Base configuration paths (defaults to .maxi directory)

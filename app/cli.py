@@ -11,6 +11,7 @@ import subprocess
 import signal
 from pathlib import Path
 import httpx
+from app import __version__
 
 PID_FILE = Path.home() / ".maxi" / "daemon.pid"
 
@@ -741,6 +742,7 @@ def main():
         prog="maxi",
         description="⚡ Maxi - Pluggable, ultra-fast background AI agent daemon"
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # run

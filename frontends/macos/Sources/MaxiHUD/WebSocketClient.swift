@@ -6,67 +6,142 @@ final class WebSocketClient {
 
     private var webSocketTask: URLSessionWebSocketTask?
     private let session = URLSession(configuration: .default)
-    private let wsURL = URL(string: "ws://127.0.0.1:4848/ws")!
-    private let apiBase = URL(string: "http://127.0.0.1:4848/api")!
-    private var isConnecting = false
+    private let wsURL: URL
+    private let apiBase: URL
+    private let reconnectDelay: UInt64
+    private let heartbeatInterval: UInt64
+    private let heartbeatTimeout: UInt64
+    private var isRunning = false
+    private var reconnectTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+    private var heartbeatTimeoutTask: Task<Void, Never>?
+
+    init(
+        wsURL: URL = URL(string: "ws://127.0.0.1:4848/ws")!,
+        apiBase: URL = URL(string: "http://127.0.0.1:4848/api")!,
+        reconnectDelay: UInt64 = 1_500_000_000,
+        heartbeatInterval: UInt64 = 5_000_000_000,
+        heartbeatTimeout: UInt64 = 5_000_000_000
+    ) {
+        self.wsURL = wsURL
+        self.apiBase = apiBase
+        self.reconnectDelay = reconnectDelay
+        self.heartbeatInterval = heartbeatInterval
+        self.heartbeatTimeout = heartbeatTimeout
+    }
 
     func start() {
+        guard !isRunning else { return }
+        isRunning = true
         connect()
     }
 
-    private func connect() {
-        guard !isConnecting else { return }
-        isConnecting = true
-
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-        let task = session.webSocketTask(with: wsURL)
-        self.webSocketTask = task
-        task.resume()
-
-        receiveNext()
-        sendPing()
+    func stop() {
+        isRunning = false
+        cancelConnectionWork()
+        let oldTask = webSocketTask
+        webSocketTask = nil
+        oldTask?.cancel(with: .goingAway, reason: nil)
+        AppState.shared.wsConnected = false
     }
 
-    private func receiveNext() {
-        webSocketTask?.receive { [weak self] result in
+    func reconnect() {
+        guard isRunning else { return }
+        connect()
+    }
+
+    private func cancelConnectionWork() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        heartbeatTimeoutTask?.cancel()
+        heartbeatTimeoutTask = nil
+    }
+
+    private func connect() {
+        guard isRunning else { return }
+        cancelConnectionWork()
+        let oldTask = webSocketTask
+        webSocketTask = nil
+        oldTask?.cancel(with: .goingAway, reason: nil)
+        AppState.shared.wsConnected = false
+
+        let task = session.webSocketTask(with: wsURL)
+        webSocketTask = task
+        task.resume()
+        syncTTSState()
+        syncConfig()
+        receiveNext(from: task)
+        sendPing(on: task)
+    }
+
+    private func receiveNext(from task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
             Task { @MainActor in
-                guard let self = self else { return }
+                // Cancellation callbacks from an old socket must never change
+                // the new socket's state or start another receive/retry loop.
+                guard let self, self.webSocketTask === task else { return }
                 switch result {
                 case .success(let message):
-                    self.isConnecting = false
                     AppState.shared.wsConnected = true
                     if case .string(let text) = message {
                         self.handlePayload(text)
                     }
-                    self.receiveNext()
-                case .failure:
-                    self.isConnecting = false
-                    AppState.shared.wsConnected = false
-                    self.scheduleReconnect()
+                    self.receiveNext(from: task)
+                case .failure(let error):
+                    self.connectionFailed(task, reason: error.localizedDescription)
                 }
             }
         }
     }
 
-    private func sendPing() {
-        webSocketTask?.sendPing { [weak self] error in
+    private func sendPing(on task: URLSessionWebSocketTask) {
+        guard isRunning, webSocketTask === task else { return }
+        heartbeatTimeoutTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(nanoseconds: self.heartbeatTimeout)
+            } catch { return }
+            self.connectionFailed(task, reason: "Heartbeat timed out")
+        }
+        task.sendPing { [weak self] error in
             Task { @MainActor in
-                guard let self = self else { return }
-                if error == nil {
-                    AppState.shared.wsConnected = true
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    self.sendPing()
-                } else {
-                    AppState.shared.wsConnected = false
-                    self.scheduleReconnect()
+                guard let self, self.webSocketTask === task else { return }
+                self.heartbeatTimeoutTask?.cancel()
+                self.heartbeatTimeoutTask = nil
+                if let error {
+                    self.connectionFailed(task, reason: error.localizedDescription)
+                    return
+                }
+                if !AppState.shared.wsConnected {
+                    NSLog("[MaxiHUD] Connected to voice daemon")
+                }
+                AppState.shared.wsConnected = true
+                self.heartbeatTask = Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        try await Task.sleep(nanoseconds: self.heartbeatInterval)
+                    } catch { return }
+                    self.sendPing(on: task)
                 }
             }
         }
     }
 
-    private func scheduleReconnect() {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+    private func connectionFailed(_ task: URLSessionWebSocketTask, reason: String) {
+        guard isRunning, webSocketTask === task else { return }
+        // Clear identity before cancelling, since both receive and ping may fail.
+        webSocketTask = nil
+        cancelConnectionWork()
+        task.cancel(with: .goingAway, reason: nil)
+        AppState.shared.wsConnected = false
+        NSLog("[MaxiHUD] Voice connection lost: %@. Reconnecting…", reason)
+        reconnectTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(nanoseconds: self.reconnectDelay)
+            } catch { return }
             self.connect()
         }
     }
@@ -116,7 +191,8 @@ final class WebSocketClient {
 
         case "tool_start":
             let tool = (obj["tool"] as? String) ?? ""
-            state.handleToolStart(tool)
+            let args = (obj["args"] as? [String: Any]) ?? [:]
+            state.handleToolStart(tool, args: args)
 
         case "tool_end":
             let tool = (obj["tool"] as? String) ?? ""
@@ -150,10 +226,106 @@ final class WebSocketClient {
         }
     }
 
+    func cancelActiveCommand() {
+        var req = URLRequest(url: apiBase.appendingPathComponent("voice/cancel"))
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req).resume()
+    }
+
+    func clearContext(completion: (() -> Void)? = nil) {
+        var req = URLRequest(url: apiBase.appendingPathComponent("context/clear"))
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            completion?()
+        }.resume()
+    }
+
     func stopTTS() {
         var req = URLRequest(url: apiBase.appendingPathComponent("tts/stop"))
         req.httpMethod = "POST"
         URLSession.shared.dataTask(with: req).resume()
+    }
+
+    func setAutoSpeech(enabled: Bool) {
+        var req = URLRequest(url: apiBase.appendingPathComponent("config"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["enable_tts": enabled ? "true" : "false"]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: req).resume()
+    }
+
+    func syncTTSState() {
+        let req = URLRequest(url: apiBase.appendingPathComponent("tts"))
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let active = json["active"] as? [String: Any],
+                  let enabled = active["enable_tts"] as? Bool else { return }
+            Task { @MainActor in
+                AppState.shared.autoSpeechEnabled = enabled
+                UserDefaults.standard.set(enabled, forKey: "maxi.hud.auto_speech")
+            }
+        }.resume()
+    }
+
+    func syncConfig() {
+        let req = URLRequest(url: apiBase.appendingPathComponent("config"))
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let config = json["config"] as? [String: Any],
+                  let model = config["llm_model"] as? String else { return }
+            Task { @MainActor in
+                AppState.shared.currentModel = model
+            }
+        }.resume()
+    }
+
+    func fetchAvailableModels(completion: (([String]) -> Void)? = nil) {
+        let req = URLRequest(url: apiBase.appendingPathComponent("models"))
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let models = json["models"] as? [String] else {
+                completion?([])
+                return
+            }
+            let current = json["current_model"] as? String
+            Task { @MainActor in
+                if !models.isEmpty {
+                    AppState.shared.availableModels = models
+                }
+                if let current = current, !current.isEmpty {
+                    AppState.shared.currentModel = current
+                }
+                completion?(models)
+            }
+        }.resume()
+    }
+
+    func setModel(_ modelName: String, completion: (() -> Void)? = nil) {
+        var req = URLRequest(url: apiBase.appendingPathComponent("config"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["model": modelName]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            Task { @MainActor in
+                AppState.shared.currentModel = modelName
+                completion?()
+            }
+        }.resume()
+    }
+
+    func reloadDaemon(completion: (() -> Void)? = nil) {
+        var req = URLRequest(url: apiBase.appendingPathComponent("reload"))
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            Task { @MainActor in
+                completion?()
+            }
+        }.resume()
     }
 
     func injectTextAtCursor(_ text: String) {

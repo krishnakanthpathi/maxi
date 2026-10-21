@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
     @Published var agentOutput: String = ""
     @Published var toolsUsed: [String] = []
     @Published var currentExecutingTool: String? = nil
+    @Published var currentToolArgs: [String: Any] = [:]
     @Published var activeToolsList: [String] = []
     @Published var activeAppIcon: NSImage? = nil
     @Published var activeAppName: String = ""
@@ -47,12 +48,39 @@ final class AppState: ObservableObject {
     @Published var showToast: Bool = false
     @Published var isHoveringToast: Bool = false
     @Published var copiedFeedback: Bool = false
+    @Published var copiedPromptFeedback: Bool = false
+    @Published var contextClearedFeedback: Bool = false
+
+    @Published var qrImage: NSImage? = nil
+    @Published var qrCountdown: Int = 20
+    @Published var qrFilePath: String? = nil
+    private var qrTimer: Timer? = nil
+    private var lastQRModDate: Date? = nil
 
     @Published var wsConnected: Bool = false
+    @Published var currentModel: String = "gpt-oss:120b-cloud"
+    @Published var availableModels: [String] = [
+        "gpt-oss:120b-cloud",
+        "gemma4:31b-cloud",
+        "llama-3.3-70b-versatile",
+        "meta-llama/llama-3.3-70b-instruct"
+    ]
     @Published var alwaysShowIdlePill: Bool = false
+    @Published var autoSpeechEnabled: Bool = {
+        if UserDefaults.standard.object(forKey: "maxi.hud.auto_speech") != nil {
+            return UserDefaults.standard.bool(forKey: "maxi.hud.auto_speech")
+        }
+        return true
+    }()
+    @Published var autoHideEnabled: Bool = {
+        if UserDefaults.standard.object(forKey: "maxi.hud.auto_hide") != nil {
+            return UserDefaults.standard.bool(forKey: "maxi.hud.auto_hide")
+        }
+        return true
+    }()
     @Published var positionMode: PositionMode = {
-        let saved = UserDefaults.standard.string(forKey: "maxi.hud.position") ?? PositionMode.bottomDock.rawValue
-        return PositionMode(rawValue: saved) ?? .bottomDock
+        let saved = UserDefaults.standard.string(forKey: "maxi.hud.position") ?? PositionMode.topNotch.rawValue
+        return PositionMode(rawValue: saved) ?? .topNotch
     }()
 
     var isHUDVisible: Bool {
@@ -66,6 +94,55 @@ final class AppState: ObservableObject {
     func setPosition(_ newMode: PositionMode) {
         positionMode = newMode
         UserDefaults.standard.set(newMode.rawValue, forKey: "maxi.hud.position")
+        onLayoutChange?()
+    }
+
+    func setAutoSpeech(_ enabled: Bool) {
+        autoSpeechEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "maxi.hud.auto_speech")
+        WebSocketClient.shared.setAutoSpeech(enabled: enabled)
+        onLayoutChange?()
+    }
+
+    func toggleAutoSpeech() {
+        setAutoSpeech(!autoSpeechEnabled)
+    }
+
+    func setAutoHide(_ enabled: Bool) {
+        autoHideEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "maxi.hud.auto_hide")
+        if !enabled {
+            dismissTask?.cancel()
+        }
+        onLayoutChange?()
+    }
+
+    func toggleAutoHide() {
+        setAutoHide(!autoHideEnabled)
+    }
+
+    func clearContext() {
+        dismissTask?.cancel()
+        stopQRPoll()
+        WebSocketClient.shared.clearContext()
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            contextClearedFeedback = true
+            mode = .idle
+            showToast = false
+            audioLevels = [0.12, 0.12, 0.12, 0.12, 0.12]
+            transcript = ""
+            agentOutput = ""
+            toolsUsed = []
+            activeToolsList = []
+            currentExecutingTool = nil
+            currentToolArgs = [:]
+            contextInfo = CapturedContextInfo()
+            activeAppIcon = nil
+            activeAppName = ""
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
+            self?.contextClearedFeedback = false
+        }
         onLayoutChange?()
     }
 
@@ -84,6 +161,7 @@ final class AppState: ObservableObject {
 
     func handleVoiceStart(locked: Bool) {
         dismissTask?.cancel()
+        stopQRPoll()
         captureFrontmostApp()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             mode = .recording(locked: locked)
@@ -92,6 +170,10 @@ final class AppState: ObservableObject {
             showToast = false
             currentExecutingTool = nil
             activeToolsList = []
+            toolsUsed = []
+            transcript = ""
+            agentOutput = ""
+            latencyMs = 0
         }
         onLayoutChange?()
     }
@@ -103,13 +185,12 @@ final class AppState: ObservableObject {
         onLayoutChange?()
     }
 
-    func handleToolStart(_ tool: String) {
+    func handleToolStart(_ tool: String, args: [String: Any] = [:]) {
         guard !tool.isEmpty else { return }
         withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
             currentExecutingTool = tool
-            if !activeToolsList.contains(tool) {
-                activeToolsList.append(tool)
-            }
+            currentToolArgs = args
+            activeToolsList.append(tool)
             toolsUsed = activeToolsList
         }
         onLayoutChange?()
@@ -119,6 +200,7 @@ final class AppState: ObservableObject {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
             if currentExecutingTool == tool {
                 currentExecutingTool = nil
+                currentToolArgs = [:]
             }
         }
         onLayoutChange?()
@@ -138,6 +220,10 @@ final class AppState: ObservableObject {
     func handleAudioLevels(_ levels: [Double], locked: Bool, elapsed: Double) {
         if case .recording = mode {
             mode = .recording(locked: locked)
+        } else {
+            // A reconnect can miss voice_start. Live levels also prove that a
+            // recording is active, so restore the panel and cancel old dismissals.
+            handleVoiceStart(locked: locked)
         }
         elapsedSeconds = elapsed
         let mapped = levels.prefix(5).map { CGFloat(max(0.10, min(1.0, $0))) }
@@ -155,12 +241,16 @@ final class AppState: ObservableObject {
                 withAnimation(.easeOut(duration: 0.15)) {
                     mode = .idle
                     showToast = false
+                    transcript = ""
+                    agentOutput = ""
                 }
                 onLayoutChange?()
             } else {
                 withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
                     mode = .cancelled
                     showToast = false
+                    transcript = ""
+                    agentOutput = ""
                 }
                 onLayoutChange?()
                 scheduleResetToIdle(after: 0.65)
@@ -175,6 +265,8 @@ final class AppState: ObservableObject {
         withAnimation(.easeOut(duration: 0.2)) {
             mode = .idle
             showToast = false
+            transcript = ""
+            agentOutput = ""
         }
         onLayoutChange?()
     }
@@ -183,6 +275,12 @@ final class AppState: ObservableObject {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
             mode = .processing
             audioLevels = [0.12, 0.12, 0.12, 0.12, 0.12]
+            showToast = false
+            currentExecutingTool = nil
+            currentToolArgs = [:]
+            activeToolsList = []
+            toolsUsed = []
+            agentOutput = ""
         }
         onLayoutChange?()
     }
@@ -193,6 +291,48 @@ final class AppState: ObservableObject {
             showToast = true
         }
         onLayoutChange?()
+    }
+
+    func startQRPoll(path: String) {
+        self.qrFilePath = path
+        loadFreshQR()
+        qrTimer?.invalidate()
+        qrTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.loadFreshQR()
+                if self.qrCountdown > 1 {
+                    self.qrCountdown -= 1
+                } else {
+                    self.qrCountdown = 20
+                }
+            }
+        }
+    }
+
+    func stopQRPoll() {
+        qrTimer?.invalidate()
+        qrTimer = nil
+        qrImage = nil
+        qrFilePath = nil
+        lastQRModDate = nil
+    }
+
+    private func loadFreshQR() {
+        guard let path = qrFilePath, FileManager.default.fileExists(atPath: path) else { return }
+        let url = URL(fileURLWithPath: path)
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            let modDate = attrs[.modificationDate] as? Date ?? Date()
+            if qrImage == nil || lastQRModDate == nil || modDate > lastQRModDate! {
+                let data = try Data(contentsOf: url, options: .uncached)
+                if let img = NSImage(data: data) {
+                    self.qrImage = img
+                    self.lastQRModDate = modDate
+                    self.qrCountdown = 20
+                }
+            }
+        } catch {}
     }
 
     func handleResult(transcript: String, output: String, tools: [String], latencyMs: Int) {
@@ -207,8 +347,20 @@ final class AppState: ObservableObject {
             self.mode = .result
             self.showToast = true
         }
+
+        // An explicit result image remains valid after status checks or login.
+        // Tool names alone do not identify a fresh QR code or its location.
+        let foundPath = ResultImage.path(in: output)
+
+        if let path = foundPath {
+            startQRPoll(path: path)
+            scheduleAutoDismiss(after: 180.0)
+        } else {
+            stopQRPoll()
+            scheduleAutoDismiss(after: 4.0)
+        }
+
         onLayoutChange?()
-        scheduleAutoDismiss(after: 4.0)
     }
 
     func handleTTSStart() {
@@ -241,8 +393,30 @@ final class AppState: ObservableObject {
         }
     }
 
+    func handleEscape() {
+        dismissTask?.cancel()
+        stopQRPoll()
+        WebSocketClient.shared.cancelActiveCommand()
+        if mode == .speaking {
+            WebSocketClient.shared.stopTTS()
+        }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+            mode = .cancelled
+            showToast = false
+            currentExecutingTool = nil
+            currentToolArgs = [:]
+            activeToolsList = []
+            toolsUsed = []
+            transcript = ""
+            agentOutput = ""
+        }
+        onLayoutChange?()
+        scheduleResetToIdle(after: 0.5)
+    }
+
     func dismissToast() {
         dismissTask?.cancel()
+        stopQRPoll()
         currentExecutingTool = nil
         activeToolsList = []
         if mode == .speaking {
@@ -251,6 +425,8 @@ final class AppState: ObservableObject {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
             showToast = false
             mode = .idle
+            transcript = ""
+            agentOutput = ""
         }
         onLayoutChange?()
     }
@@ -264,6 +440,8 @@ final class AppState: ObservableObject {
                 if mode == .cancelled {
                     mode = .idle
                 }
+                transcript = ""
+                agentOutput = ""
             }
             onLayoutChange?()
         }
@@ -271,16 +449,22 @@ final class AppState: ObservableObject {
 
     private func scheduleAutoDismiss(after seconds: Double) {
         dismissTask?.cancel()
+        guard autoHideEnabled else { return }
+        let effectiveSeconds = (qrFilePath != nil && seconds < 180.0) ? 180.0 : seconds
         let gen = hoverDismissGeneration
         dismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(effectiveSeconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             guard !isHoveringToast && gen == hoverDismissGeneration else { return }
+            guard autoHideEnabled else { return }
+            stopQRPoll()
             withAnimation(.spring(response: 0.30, dampingFraction: 0.84)) {
                 showToast = false
                 if mode == .result {
                     mode = .idle
                 }
+                transcript = ""
+                agentOutput = ""
             }
             onLayoutChange?()
         }

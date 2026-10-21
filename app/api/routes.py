@@ -64,9 +64,19 @@ async def handle_voice_webhook(request: VoiceWebhookRequest):
 
 @router.post("/context/clear")
 async def clear_context():
-    """Clears short-term sliding conversational history buffer."""
+    """Start a new chat while retaining deliberately saved long-term memories."""
+    from app.core.voice_service import voice_service
+    voice_service.abort_current_command(reason="new_chat")
     agent.clear_history()
     return {"status": "cleared", "message": "Conversation history reset to empty."}
+
+
+@router.post("/voice/cancel")
+async def cancel_voice():
+    """Immediately abort any active recording, STT transcription, or LLM agent processing."""
+    from app.core.voice_service import voice_service
+    voice_service.abort_current_command(reason="esc")
+    return {"status": "cancelled", "message": "Active voice/agent execution aborted."}
 
 
 @router.get("/skills", response_model=List[Skill])
@@ -236,6 +246,70 @@ async def update_configuration(updates: dict):
     }
 
 
+@router.get("/models")
+async def list_available_models():
+    """Query the active OpenAI-compatible endpoint for available models."""
+    import httpx
+    import logging
+    logger = logging.getLogger("maxi.models")
+    from app.core.config_manager import get_current_config
+
+    cfg = get_current_config()
+    base_url = (cfg.get("llm_url") or settings.openai_base_url or "").rstrip("/")
+    api_key = cfg.get("llm_key") or settings.openai_api_key or ""
+    current_model = cfg.get("llm_model") or settings.openai_model or "gpt-oss:120b-cloud"
+
+    headers = {}
+    if api_key and api_key.lower() not in ("ollama", "none", ""):
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    models = []
+    endpoints_to_try = [f"{base_url}/models"]
+    if not base_url.endswith("/v1"):
+        endpoints_to_try.append(f"{base_url}/v1/models")
+    if "11434" in base_url or "localhost" in base_url:
+        endpoints_to_try.append(f"{base_url.split('/v1')[0]}/api/tags")
+
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        for ep in endpoints_to_try:
+            try:
+                resp = await client.get(ep, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                        for m in data["data"]:
+                            if isinstance(m, dict) and "id" in m:
+                                mid = str(m["id"])
+                                if "embed" not in mid.lower() and mid not in models:
+                                    models.append(mid)
+                            elif isinstance(m, str) and m not in models:
+                                models.append(m)
+                    elif isinstance(data, dict) and "models" in data and isinstance(data["models"], list):
+                        for m in data["models"]:
+                            if isinstance(m, dict):
+                                mname = str(m.get("name") or m.get("model") or "")
+                                if mname and "embed" not in mname.lower() and mname not in models:
+                                    models.append(mname)
+                    if models:
+                        break
+            except Exception as ex:
+                logger.debug(f"Failed to fetch models from {ep}: {ex}")
+
+    if current_model:
+        if current_model in models:
+            models.remove(current_model)
+        models.insert(0, current_model)
+    elif not models:
+        models = ["gpt-oss:120b-cloud", "gemma4:31b-cloud", "llama-3.3-70b-versatile"]
+
+    return {
+        "status": "ok",
+        "current_model": current_model,
+        "base_url": base_url,
+        "models": models
+    }
+
+
 class TTSSpeakRequest(BaseModel):
     text: str = Field(..., description="Text to speak aloud using Siri TTS")
     voice: Optional[str] = Field(None, description="Optional Siri voice preset or macOS voice name (e.g. Tara, Samantha, Daniel)")
@@ -279,6 +353,24 @@ async def stop_tts():
     from app.core.tts import tts_service
     tts_service.stop()
     return {"status": "stopped"}
+
+
+class TTSToggleRequest(BaseModel):
+    enabled: Optional[bool] = None
+
+
+@router.post("/tts/toggle")
+async def toggle_tts(request: Optional[TTSToggleRequest] = None):
+    """Toggle or explicitly set Text-to-Speech active state and persist to .env."""
+    from app.core.config_manager import save_config
+    if request and request.enabled is not None:
+        target = request.enabled
+    else:
+        target = not getattr(settings, "enable_tts", True)
+
+    settings.enable_tts = target
+    save_config({"ENABLE_TTS": str(target).lower()}, notify_daemon=False)
+    return {"status": "ok", "enable_tts": settings.enable_tts}
 
 
 class GlossaryTermRequest(BaseModel):

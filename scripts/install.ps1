@@ -77,10 +77,20 @@ if (-not (Test-Path $envTarget)) {
     }
 }
 
-# Copy sounds and assets if present
-$srcMaxiDir = Join-Path $sourcePath ".maxi"
-if (Test-Path $srcMaxiDir) {
-    Copy-Item -Path "$srcMaxiDir\*" -Destination $maxiDir -Recurse -Force -ErrorAction SilentlyContinue
+# Preserve existing private user configuration; copy only a generic example.
+$mcpTarget = Join-Path $maxiDir "mcp_config.json"
+$mcpExample = Join-Path $sourcePath ".maxi/mcp_config.example.json"
+if (-not (Test-Path $mcpTarget) -and (Test-Path $mcpExample)) {
+    Copy-Item $mcpExample $mcpTarget
+}
+$skillSource = Join-Path $sourcePath ".maxi/skills"
+$skillTarget = Join-Path $maxiDir "skills"
+if (Test-Path $skillSource) {
+    New-Item -ItemType Directory -Path $skillTarget -Force | Out-Null
+    Get-ChildItem $skillSource -Filter "*.md" | ForEach-Object {
+        $target = Join-Path $skillTarget $_.Name
+        if (-not (Test-Path $target)) { Copy-Item $_.FullName $target }
+    }
 }
 
 # 5. Virtual Environment Setup

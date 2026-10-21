@@ -103,8 +103,16 @@ elif [ -f "${SOURCE_PATH}/.env.example" ] && [ ! -f "${INSTALL_DIR}/.env" ]; the
     echo -e "🔑 Initialized default config at ${CYAN}${INSTALL_DIR}/.env${RESET}"
 fi
 
-if [ -d "${SOURCE_PATH}/.maxi" ]; then
-    cp -r "${SOURCE_PATH}/.maxi/"* "${INSTALL_DIR}/" 2>/dev/null || true
+# Copy only generic defaults, without overwriting private user configuration.
+if [ ! -f "${INSTALL_DIR}/mcp_config.json" ] && [ -f "${SOURCE_PATH}/.maxi/mcp_config.example.json" ]; then
+    cp "${SOURCE_PATH}/.maxi/mcp_config.example.json" "${INSTALL_DIR}/mcp_config.json"
+fi
+if [ -d "${SOURCE_PATH}/.maxi/skills" ]; then
+    mkdir -p "${INSTALL_DIR}/skills"
+    for skill in "${SOURCE_PATH}/.maxi/skills/"*.md; do
+        [ -f "$skill" ] || continue
+        [ -f "${INSTALL_DIR}/skills/$(basename "$skill")" ] || cp "$skill" "${INSTALL_DIR}/skills/"
+    done
 fi
 
 echo -e "📦 Setting up isolated environment at ${CYAN}${VENV_DIR}${RESET}..."
@@ -215,7 +223,7 @@ echo -e "${GREEN}${BOLD}🎉 Maxi successfully installed!${RESET}"
 echo ""
 echo -e "Commands:"
 echo -e "  • Start daemon:   ${CYAN}maxi start${RESET}"
-echo -e "  • Open Web HUD:   ${CYAN}maxi hud${RESET}"
+echo -e "  • Open macOS HUD:   ${CYAN}maxi hud${RESET}"
 echo -e "  • Check status:   ${CYAN}maxi status${RESET}"
 echo -e "  • Stop daemon:    ${CYAN}maxi stop${RESET}"
 echo ""
@@ -227,9 +235,9 @@ if ! command -v maxi >/dev/null 2>&1; then
 fi
 echo -e "Hotkey:"
 if [ "$OS" = "Darwin" ]; then
-    echo -e "  • Tap or hold ${BOLD}Right Option${RESET} to speak."
+    echo -e "  • Hold ${BOLD}Right Option${RESET} to speak."
 else
-    echo -e "  • Tap or hold ${BOLD}Control + Space${RESET} to speak."
+    echo -e "  • Hold ${BOLD}Control + Space${RESET} to speak."
 fi
-echo -e "  • No mic? Use Web HUD chat or REST API directly!"
+echo -e "  • No mic? Use the local REST API directly!"
 echo ""
