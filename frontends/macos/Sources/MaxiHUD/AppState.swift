@@ -66,6 +66,7 @@ final class AppState: ObservableObject {
         "meta-llama/llama-3.3-70b-instruct"
     ]
     @Published var alwaysShowIdlePill: Bool = false
+    @Published var isManuallyPresented: Bool = false
     @Published var autoSpeechEnabled: Bool = {
         if UserDefaults.standard.object(forKey: "maxi.hud.auto_speech") != nil {
             return UserDefaults.standard.bool(forKey: "maxi.hud.auto_speech")
@@ -84,7 +85,12 @@ final class AppState: ObservableObject {
     }()
 
     var isHUDVisible: Bool {
-        alwaysShowIdlePill || mode != .idle || showToast
+        alwaysShowIdlePill || isManuallyPresented || mode != .idle || showToast
+    }
+
+    func revealHUD() {
+        isManuallyPresented = true
+        onLayoutChange?()
     }
 
     private var hoverDismissGeneration: Int = 0
@@ -160,6 +166,7 @@ final class AppState: ObservableObject {
     }
 
     func handleVoiceStart(locked: Bool) {
+        isManuallyPresented = false
         dismissTask?.cancel()
         stopQRPoll()
         captureFrontmostApp()
@@ -272,6 +279,7 @@ final class AppState: ObservableObject {
     }
 
     func handleProcessing() {
+        isManuallyPresented = false
         withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
             mode = .processing
             audioLevels = [0.12, 0.12, 0.12, 0.12, 0.12]
@@ -394,6 +402,12 @@ final class AppState: ObservableObject {
     }
 
     func handleEscape() {
+        if mode == .idle && isManuallyPresented && !showToast {
+            isManuallyPresented = false
+            onLayoutChange?()
+            return
+        }
+        isManuallyPresented = false
         dismissTask?.cancel()
         stopQRPoll()
         WebSocketClient.shared.cancelActiveCommand()

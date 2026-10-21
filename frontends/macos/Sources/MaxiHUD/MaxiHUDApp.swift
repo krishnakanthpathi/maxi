@@ -21,19 +21,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let barPanel = BarPanel(contentView: hudView)
         barPanel.updatePosition()
         self.panel = barPanel
-        syncPanelVisibility()
 
         AppState.shared.onLayoutChange = { [weak self] in
             self?.syncPanelVisibility()
         }
 
         setupStatusBarMenu()
+        AppState.shared.revealHUD()
+        BackendBootstrap.startIfBundled()
         WebSocketClient.shared.start()
 
         // Global and local Escape monitoring to immediately cancel active voice command, STT, LLM, or toast
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 { // Escape key
-                if AppState.shared.mode != .idle || AppState.shared.showToast {
+                if AppState.shared.isHUDVisible {
                     AppState.shared.handleEscape()
                     return nil
                 }
@@ -44,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 Task { @MainActor in
-                    if AppState.shared.mode != .idle || AppState.shared.showToast {
+                    if AppState.shared.isHUDVisible {
                         AppState.shared.handleEscape()
                     }
                 }
@@ -83,6 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        AppState.shared.revealHUD()
+        return true
+    }
+
     private func syncPanelVisibility() {
         guard let panel = self.panel else { return }
         if AppState.shared.isHUDVisible {
@@ -107,6 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
+
+        let showItem = NSMenuItem(title: "Show Maxi", action: #selector(showMaxi), keyEquivalent: "0")
+        showItem.target = self
+        menu.addItem(showItem)
 
         // Active Model Selection Submenu
         let modelParent = NSMenuItem(title: "🤖 Model: \(AppState.shared.currentModel)", action: nil, keyEquivalent: "")
@@ -329,6 +339,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncPanelVisibility()
     }
 
+    @objc private func showMaxi() {
+        AppState.shared.revealHUD()
+    }
+
     @objc private func showLastToast() {
         AppState.shared.showToast = true
         syncPanelVisibility()
@@ -343,12 +357,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
+#if !MAXI_HUD_TESTING
 @main
 struct MaxiHUDMain {
     static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.run()
+        withExtendedLifetime(delegate) { app.run() }
     }
 }
+#endif

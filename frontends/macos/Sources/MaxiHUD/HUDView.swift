@@ -472,11 +472,11 @@ struct HUDView: View {
                                 removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96))
                             ))
                     }
-                    if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
+                    if state.isHUDVisible {
                         MaxiPillBarView(state: state)
                     }
                 } else {
-                    if state.alwaysShowIdlePill || state.mode != .idle || state.showToast {
+                    if state.isHUDVisible {
                         MaxiPillBarView(state: state)
                     }
                     if state.showToast {

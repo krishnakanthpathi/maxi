@@ -51,18 +51,18 @@ if any(path.exists() for path in [INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH]):
         safe(names)
         base = 'Maxi.app/Contents/'
         info = plistlib.loads(archive.read(base + 'Info.plist'))
-        assert info['CFBundleExecutable'] == 'MaxiLauncher'
+        assert info['CFBundleExecutable'] == 'MaxiHUD'
         assert info['CFBundleIconFile'] == 'Maxi.icns'
         assert archive.read(base + 'Resources/Maxi.icns').startswith(b'icns')
         assert base + 'MacOS/MaxiHUD' in names
-        assert base + 'MacOS/MaxiLauncher' in names
+        assert base + 'MacOS/MaxiLauncher' not in names
         assert base + 'Resources/Install Maxi.command' in names
         assert archive.read(base + 'Resources/install_macos.sh') == INSTALLER_SH.read_bytes()
         assert archive.read(base + 'Resources/' + WHEEL.name) == WHEEL.read_bytes()
         assert archive.read(base + 'Resources/default.env') == (ROOT / '.env.example').read_bytes()
     artifacts.extend([INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH])
     assert INSTALLER_SH.read_bytes() == (ROOT / 'scripts/install_macos.sh').read_bytes()
-    print('PASS: combined app includes its launcher, backend wheel, setup script, and icon')
+    print('PASS: combined app includes native startup, backend wheel, setup script, and icon')
 lines = [f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}' for path in artifacts]
 (DIST / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
 print('PASS: wheel, source archive, and macOS companion are sanitized and complete')

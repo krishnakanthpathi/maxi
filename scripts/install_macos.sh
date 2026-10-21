@@ -113,6 +113,39 @@ if [[ "$app_source" != "$target_app" ]]; then
     [[ ! -L "$target_app" ]] || die "Refusing to replace a symlink at $target_app"
     new_app="$apps_dir/.Maxi-install-$$.app"
     ditto "$app_source" "$new_app"
+    # Opening an already-running old bundle can leave its old, hidden HUD alive.
+    # Stop only GUI processes from the exact app copies being replaced; keep
+    # the daemon, recording state, and conversation running independently.
+    "$venv/bin/python" - "$target_app" "$app_source" <<'PY'
+import os, signal, subprocess, sys, time
+from pathlib import Path
+executables = {
+    str(Path(app) / 'Contents/MacOS' / name)
+    for app in sys.argv[1:] for name in ('MaxiHUD', 'MaxiLauncher')
+}
+processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
+stopped = []
+for line in processes.splitlines():
+    fields = line.strip().split(None, 1)
+    if len(fields) != 2 or fields[1] not in executables:
+        continue
+    pid = int(fields[0])
+    try:
+        os.kill(pid, signal.SIGTERM)
+        stopped.append(pid)
+    except ProcessLookupError:
+        pass
+deadline = time.monotonic() + 3
+for pid in stopped:
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        if time.monotonic() >= deadline:
+            raise SystemExit('Please quit Maxi and run the installer again.')
+        time.sleep(0.05)
+PY
     backup_app="$apps_dir/.Maxi-previous-$$.app"
     if [[ -e "$target_app" ]]; then mv "$target_app" "$backup_app"; fi
     if ! mv "$new_app" "$target_app"; then

@@ -6,10 +6,8 @@ check_dir="$(mktemp -d "${TMPDIR:-/tmp}/maxi-hud-checks.XXXXXX")"
 trap 'rm -rf "$check_dir"' EXIT
 sources=()
 for source in "$repo_root"/frontends/macos/Sources/MaxiHUD/*.swift; do
-    if [[ "$(basename "$source")" != "MaxiHUDApp.swift" ]]; then
-        sources+=("$source")
-    fi
+    sources+=("$source")
 done
-swiftc -parse-as-library "${sources[@]}" \
+swiftc -D MAXI_HUD_TESTING -parse-as-library "${sources[@]}" \
     "$repo_root/tests/macos_hud/HUDRecoveryChecks.swift" -o "$check_dir/HUDRecoveryChecks"
 "$check_dir/HUDRecoveryChecks"

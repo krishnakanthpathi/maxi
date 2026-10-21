@@ -21,10 +21,6 @@ mkdir -p "$contents/MacOS" "$resources" "$root/dist"
 swift build -c release --package-path "$root/frontends/macos" --arch arm64 --arch x86_64
 binary_dir="$(swift build -c release --package-path "$root/frontends/macos" --arch arm64 --arch x86_64 --show-bin-path)"
 cp "$binary_dir/MaxiHUD" "$contents/MacOS/MaxiHUD"
-for arch in arm64 x86_64; do
-    swiftc -O -target "${arch}-apple-macosx14.0" "$root/scripts/macos/Launcher.swift" -o "$stage/launcher-$arch"
-done
-lipo -create "$stage/launcher-arm64" "$stage/launcher-x86_64" -output "$contents/MacOS/MaxiLauncher"
 swift "$root/scripts/macos/make_icon.swift" "$stage/Maxi.iconset"
 iconutil -c icns "$stage/Maxi.iconset" -o "$resources/Maxi.icns"
 cp "$wheel" "$resources/"
@@ -38,9 +34,9 @@ python3 - "$contents/Info.plist" <<'PY'
 import plistlib, sys
 info = {
     'CFBundleDisplayName': 'Maxi', 'CFBundleName': 'Maxi',
-    'CFBundleExecutable': 'MaxiLauncher', 'CFBundleIdentifier': 'com.maxi.hud',
+    'CFBundleExecutable': 'MaxiHUD', 'CFBundleIdentifier': 'com.maxi.hud',
     'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.3.0',
-    'CFBundleVersion': '2', 'LSMinimumSystemVersion': '14.0',
+    'CFBundleVersion': '3', 'LSMinimumSystemVersion': '14.0',
     'CFBundleIconFile': 'Maxi.icns', 'LSUIElement': True,
     'NSHighResolutionCapable': True,
     'NSMicrophoneUsageDescription': 'Maxi records your voice while you use the voice shortcut.',
@@ -51,7 +47,8 @@ PY
 codesign --force --sign - "$contents/MacOS/MaxiHUD"
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
-ditto -c -k --keepParent "$app" "$root/dist/Maxi-${version}-macos-universal.zip"
+ditto -c -k --keepParent "$app" "$stage/Maxi.zip"
+mv -f "$stage/Maxi.zip" "$root/dist/Maxi-${version}-macos-universal.zip"
 cp "$root/scripts/install_macos.sh" "$root/dist/install-macos.sh"
 
 # Both the application and mounted disk have the summation icon.

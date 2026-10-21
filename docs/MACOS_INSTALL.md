@@ -10,7 +10,11 @@ Download `Maxi-0.3.0-beta.1-macos-universal.dmg` from
 Open it, drag Maxi to Applications, and open Maxi. Both the app and mounted
 volume use the ∑ icon.
 
-On first launch, the native launcher opens the bundled `Install Maxi.command`
+Opening Maxi shows its floating pill, even when it is already running. Use
+**Show Maxi** from the ∑ menu to bring it back. The app stays out of the Dock;
+it does not open a conventional main window.
+
+On first launch, the app opens the bundled `Install Maxi.command`
 in Terminal. It installs Python if needed, installs the bundled backend wheel
 and voice dependencies, and runs the provider wizard. Open Maxi again after
 setup to start both the daemon and HUD. The installer normally opens it for you.

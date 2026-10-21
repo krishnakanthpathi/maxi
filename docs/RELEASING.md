@@ -16,7 +16,7 @@ The app is a companion to the Python daemon and is not Developer ID signed or no
 ## Combined macOS installer
 
 Run `bash scripts/package_macos_installer.sh` after building the wheel. This
-builds a universal Swift HUD and native launcher, generates the ∑ ICNS asset,
+builds a universal Swift HUD with backend bootstrap, generates the ∑ ICNS asset,
 and packages a ZIP and DMG. The app bundles the wheel and online setup script;
 Python is installed on first setup when needed, rather than included offline.
 Both the app and mounted disk must have the icon. The app is ad-hoc signed for

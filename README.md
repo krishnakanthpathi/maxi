@@ -16,7 +16,7 @@ Hold **Right Option (⌥)**, say what you need, and release to send. Double-tap 
 - macOS Microphone access for recording and Accessibility/Input Monitoring access for the Python/terminal application running Maxi's shortcut listener. Text injection and context capture also need Accessibility access.
 - MCP servers are configured separately. Available desktop actions depend on those servers and their permissions.
 
-The macOS beta is not Developer ID signed or notarized. The combined app includes the compiled HUD, launcher, and backend wheel; first setup downloads a private Python runtime when needed and installs dependencies. Internet access is required. Linux and Windows support the backend and platform shortcuts, without a native GUI in this release.
+The macOS beta is not Developer ID signed or notarized. The combined app includes the compiled HUD, backend startup, and backend wheel; first setup downloads a private Python runtime when needed and installs dependencies. Internet access is required. Linux and Windows support the backend and platform shortcuts, without a native GUI in this release.
 
 ## Install the beta
 
