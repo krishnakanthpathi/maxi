@@ -5,6 +5,19 @@
 #
 set -euo pipefail
 
+# macOS uses the compiled app + automatic Python installer, including curl use.
+if [[ "$(uname -s)" == Darwin ]]; then
+    local_installer="$(dirname "${BASH_SOURCE[0]:-$0}")/install_macos.sh"
+    if [[ -n "${BASH_SOURCE[0]:-}" && -f "$local_installer" ]]; then
+        exec /bin/bash "$local_installer" "$@"
+    fi
+    downloaded_installer="$(mktemp "${TMPDIR:-/tmp}/maxi-bootstrap.XXXXXX")"
+    trap 'rm -f "$downloaded_installer"' EXIT
+    curl -fsSL --retry 3 https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install_macos.sh -o "$downloaded_installer"
+    /bin/bash "$downloaded_installer" "$@"
+    exit $?
+fi
+
 # Visual styling
 BOLD="\033[1m"
 GREEN="\033[32m"

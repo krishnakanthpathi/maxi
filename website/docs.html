@@ -49,23 +49,27 @@
         <h1>A little setup.<br><span>A lot more flow.</span></h1>
         <p class="docs-lead">From your first shortcut to your own tools. Everything you need to make the little ∑ feel at home.</p>
         <div class="docs-quicklinks"><a href="#installation">Install Maxi <span aria-hidden="true">↘</span></a><a href="#troubleshooting">Something stuck? <span aria-hidden="true">↘</span></a></div>
-        <div class="docs-note"><span class="note-mark" aria-hidden="true">∑</span><div><strong>Two pieces. One assistant.</strong><p>The Python daemon handles voice, models, and tools. The native macOS HUD is its floating companion. Start the daemon before opening the HUD.</p></div></div>
+        <div class="docs-note"><span class="note-mark" aria-hidden="true">∑</span><div><strong>Two pieces. One assistant.</strong><p>The Python daemon handles voice, models, and tools. The native macOS HUD is its floating companion. The combined macOS installer sets up both; opening Maxi starts the daemon automatically.</p></div></div>
       </section>
 
       <section id="installation" class="doc-section">
         <div class="eyebrow">01 / GET UP AND RUNNING</div>
         <h2>Installation</h2>
-        <p>You’ll need Python 3.10+, a configured OpenAI-compatible LLM endpoint, and a Whisper-compatible transcription provider for voice input.</p>
-        <ul><li>The native HUD needs macOS 14+. Liquid Glass is available on macOS 26+; earlier supported versions use translucent material.</li><li>The prebuilt HUD is for Apple Silicon. Intel users can build the Swift source.</li><li>This beta is unsigned and not notarized. The HUD download does not bundle the Python daemon.</li></ul>
-        <div class="docs-downloads"><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl">Python backend <span aria-hidden="true">↓</span></a><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/MaxiHUD-0.3.0-beta.1-macos-arm64.zip">macOS HUD <span aria-hidden="true">↓</span></a></div>
-        <h3>Install the backend</h3>
-        <p>Download the Python wheel above into your Downloads folder, then run:</p>
+        <p>The macOS installer sets up Python automatically if needed. You’ll still need an OpenAI-compatible LLM endpoint and a Whisper-compatible transcription provider for voice input.</p>
+        <ul><li>The native HUD needs macOS 14+. Liquid Glass is available on macOS 26+; earlier supported versions use translucent material.</li><li>The combined installer supports Apple Silicon and Intel. No Xcode or Homebrew is needed.</li><li>This beta is not Developer ID signed or notarized. First setup needs internet access for Python and dependencies.</li></ul>
+        <div class="docs-downloads"><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl">Python backend <span aria-hidden="true">↓</span></a><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/Maxi-0.3.0-beta.1-macos-universal.dmg">Download macOS DMG <span aria-hidden="true">↓</span></a></div>
+        <h3>Install everything together</h3>
+        <p>Download the DMG, drag Maxi to Applications, and open it. First launch opens Terminal for setup and provider configuration. Or install with one command:</p>
+        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS</span><button type="button" data-copy aria-label="Copy one-command macOS installer">Copy ⧉</button></div><pre><code>curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install_macos.sh | bash</code></pre></div>
+        <p>The installer checks release downloads, preserves existing configuration and memories, and sets up the compiled app plus backend. Later launches start both pieces automatically. Your LLM runtime and speech provider are configured separately.</p>
+        <h3>Manual backend installation</h3>
+        <p>For a manual install, first install Python 3.10+ and download the Python wheel above into your Downloads folder, then run:</p>
         <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS / LINUX</span><button type="button" data-copy aria-label="Copy backend installation commands">Copy ⧉</button></div><pre><code>python3 -m venv ~/.maxi/venv
 ~/.maxi/venv/bin/python -m pip install "$HOME/Downloads/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
 ~/.maxi/venv/bin/maxi config wizard
 ~/.maxi/venv/bin/maxi start</code></pre></div>
         <p>Start the LLM server you configured before sending a request. The wizard sets up your providers. For voice, supply your transcription provider key if it was not configured there.</p>
-        <h3>Open the macOS HUD</h3>
+        <h3>Using the older HUD-only ZIP?</h3>
         <p>Unzip the HUD download and open <code>Maxi.app</code>. If macOS blocks the unsigned application, review it in System Settings → Privacy &amp; Security. Grant Microphone access and Accessibility/Input Monitoring access to the Python or terminal application running Maxi’s shortcut listener.</p>
         <p>For an Intel Mac, or to build the HUD yourself, install Xcode Command Line Tools and run:</p>
         <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS</span><button type="button" data-copy aria-label="Copy HUD build commands">Copy ⧉</button></div><pre><code>xcode-select --install
@@ -134,7 +138,7 @@ export PATH="$HOME/.maxi/venv/bin:$PATH"
 
       <section id="troubleshooting" class="doc-section">
         <div class="eyebrow">07 / WHEN SOMETHING GETS STUCK</div><h2>Troubleshooting</h2>
-        <details class="doc-details" open><summary>Holding the shortcut doesn’t show anything</summary><p>Run <code>maxi status</code>. If the daemon is stopped, run <code>maxi start</code>. Open <code>Maxi.app</code> or run <code>maxi hud</code>. The HUD and daemon both need to be running.</p><p>In System Settings → Privacy &amp; Security, check Microphone, Accessibility, and Input Monitoring permissions for the terminal or Python application that runs Maxi. Restart the daemon after changing permissions. Also check that another application has not claimed your shortcut.</p></details>
+        <details class="doc-details" open><summary>Holding the shortcut doesn’t show anything</summary><p>Open <code>Maxi.app</code> to start the installed daemon and HUD together. For a manual installation, run <code>maxi status</code>. If the daemon is stopped, run <code>maxi start</code>. Open <code>Maxi.app</code> or run <code>maxi hud</code>. The HUD and daemon both need to be running.</p><p>In System Settings → Privacy &amp; Security, check Microphone, Accessibility, and Input Monitoring permissions for the terminal or Python application that runs Maxi. Restart the daemon after changing permissions. Also check that another application has not claimed your shortcut.</p></details>
         <details class="doc-details"><summary>The HUD says it is disconnected</summary><p>Check <code>maxi status</code> and try <code>maxi restart</code>. The HUD reconnects to the local daemon. If the problem persists, stop the background daemon with <code>maxi stop</code>, then run <code>maxi run</code> in a terminal to inspect startup errors.</p></details>
         <details class="doc-details"><summary>Recording works, but I don’t get a response</summary><p>Verify that the LLM endpoint is running and your configured model exists there. Check your transcription provider URL and key. Run the daemon in the foreground with <code>maxi run</code> after stopping the background instance to see provider errors.</p></details>
         <details class="doc-details"><summary>The model is using context I don’t want</summary><p>Choose New Chat to reset recent conversation. Previously saved LightMem facts stay separate; manage those through your installed <code>lmem</code> CLI. Starting a chat does not delete saved memories.</p></details>

@@ -8,16 +8,29 @@ Hold **Right Option (⌥)**, say what you need, and release to send. Double-tap 
 
 ## Requirements
 
-- Python 3.10+ and a configured OpenAI-compatible LLM endpoint/model.
+- The macOS installer sets up Python automatically. Manual backend installs need Python 3.10+.
+- A configured OpenAI-compatible LLM endpoint/model.
 - A Whisper-compatible transcription provider and key for voice input.
 - macOS 14+ for the native SwiftUI HUD. Liquid Glass uses macOS 26+; macOS 14/15 use a translucent material fallback.
-- The prebuilt HUD companion targets Apple Silicon. Intel Macs can build the included Swift source with Xcode Command Line Tools.
+- The combined macOS installer supports Apple Silicon and Intel; no Xcode or Homebrew is needed. The older HUD-only ZIP targets Apple Silicon.
 - macOS Microphone access for recording and Accessibility/Input Monitoring access for the Python/terminal application running Maxi's shortcut listener. Text injection and context capture also need Accessibility access.
 - MCP servers are configured separately. Available desktop actions depend on those servers and their permissions.
 
-The macOS beta is unsigned and not notarized. The HUD companion requires the Python daemon; it is not a bundled Python application. Linux and Windows support the backend and platform shortcuts, without a native GUI in this release.
+The macOS beta is not Developer ID signed or notarized. The combined app includes the compiled HUD, launcher, and backend wheel; first setup downloads a private Python runtime when needed and installs dependencies. Internet access is required. Linux and Windows support the backend and platform shortcuts, without a native GUI in this release.
 
 ## Install the beta
+
+On macOS 14+, download the **universal DMG** from [GitHub Releases](https://github.com/krishnakanthpathi/maxi/releases/tag/v0.3.0-beta.1), drag Maxi to Applications, and open it. First launch opens Terminal for setup and provider configuration. Later launches start the daemon and HUD together. The app and mounted disk use the ∑ icon.
+
+Or install both pieces with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install_macos.sh | bash
+```
+
+The installer verifies release checksums, installs the app in `~/Applications`, keeps its runtime in `~/.maxi`, and links the CLI at `~/.local/bin/maxi`. It preserves existing settings and memories. See [macOS installation](docs/MACOS_INSTALL.md).
+
+### Manual backend installation
 
 Download the wheel and, on Apple Silicon, the optional HUD companion from [GitHub Releases](https://github.com/krishnakanthpathi/maxi/releases).
 
@@ -124,6 +137,7 @@ The daemon binds to `127.0.0.1:4848` by default. API documentation is at `http:/
 bash scripts/test_macos_hud.sh
 uv build
 bash scripts/package_macos.sh
+bash scripts/package_macos_installer.sh
 python3 scripts/verify_release.py
 ```
 

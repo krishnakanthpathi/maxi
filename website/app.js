@@ -27,7 +27,7 @@ byId('try-demo').addEventListener('click',async()=>{
   byId('announcer').textContent='Example changed: '+examples[currentExample].title;
 });
 const install={
-  mac:{comment:'# First, download the Python backend above.',code:'python3 -m venv ~/.maxi/venv\n~/.maxi/venv/bin/python -m pip install \\\n  "$HOME/Downloads/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"\n~/.maxi/venv/bin/maxi config wizard\n~/.maxi/venv/bin/maxi start\n# Then unzip and open Maxi.app.',detail:'Python 3.10+ · configure your LLM and voice provider'},
+  mac:{comment:'# One command. Python is installed automatically if needed.',code:'curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install_macos.sh | bash',detail:'macOS 14+ · Apple Silicon + Intel · internet required for setup'},
   linux:{comment:'# Python backend and hotkey support. No native GUI.',code:'python3 -m venv ~/.maxi/venv\n~/.maxi/venv/bin/python -m pip install \\\n  "$HOME/Downloads/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"\n~/.maxi/venv/bin/maxi config wizard\n~/.maxi/venv/bin/maxi start',detail:'Python 3.10+ · PortAudio required for voice · Ctrl + Space'},
   windows:{comment:'# PowerShell · backend support, without a native GUI.',code:'py -m venv "$HOME\\.maxi\\venv"\n& "$HOME\\.maxi\\venv\\Scripts\\python.exe" -m pip install \\\n  "$HOME\\Downloads\\maxi_ai-0.3.0b1-py3-none-any.whl[voice]"\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" config wizard\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" start',detail:'Python 3.10+ · configure your providers · Ctrl + Space'}
 };

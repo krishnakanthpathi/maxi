@@ -1,6 +1,7 @@
 """Verify sanitized beta distributions and write the release checksums."""
 from pathlib import Path
 import hashlib
+import plistlib
 import tarfile
 import zipfile
 
@@ -9,6 +10,9 @@ DIST = ROOT / 'dist'
 WHEEL = DIST / 'maxi_ai-0.3.0b1-py3-none-any.whl'
 SDIST = DIST / 'maxi_ai-0.3.0b1.tar.gz'
 MAC = DIST / 'MaxiHUD-0.3.0-beta.1-macos-arm64.zip'
+INSTALLER_ZIP = DIST / 'Maxi-0.3.0-beta.1-macos-universal.zip'
+INSTALLER_DMG = DIST / 'Maxi-0.3.0-beta.1-macos-universal.dmg'
+INSTALLER_SH = DIST / 'install-macos.sh'
 
 
 def safe(names):
@@ -39,7 +43,27 @@ with zipfile.ZipFile(MAC) as archive:
     assert 'Maxi.app/Contents/MacOS/MaxiHUD' in names
     assert 'Maxi.app/Contents/Info.plist' in names
     assert 'INSTALL.md' in names
-lines = [f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}' for path in [WHEEL, SDIST, MAC]]
+artifacts = [WHEEL, SDIST, MAC]
+if any(path.exists() for path in [INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH]):
+    assert all(path.is_file() for path in [INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH]), 'Build the complete macOS installer set'
+    with zipfile.ZipFile(INSTALLER_ZIP) as archive:
+        names = archive.namelist()
+        safe(names)
+        base = 'Maxi.app/Contents/'
+        info = plistlib.loads(archive.read(base + 'Info.plist'))
+        assert info['CFBundleExecutable'] == 'MaxiLauncher'
+        assert info['CFBundleIconFile'] == 'Maxi.icns'
+        assert archive.read(base + 'Resources/Maxi.icns').startswith(b'icns')
+        assert base + 'MacOS/MaxiHUD' in names
+        assert base + 'MacOS/MaxiLauncher' in names
+        assert base + 'Resources/Install Maxi.command' in names
+        assert archive.read(base + 'Resources/install_macos.sh') == INSTALLER_SH.read_bytes()
+        assert archive.read(base + 'Resources/' + WHEEL.name) == WHEEL.read_bytes()
+        assert archive.read(base + 'Resources/default.env') == (ROOT / '.env.example').read_bytes()
+    artifacts.extend([INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH])
+    assert INSTALLER_SH.read_bytes() == (ROOT / 'scripts/install_macos.sh').read_bytes()
+    print('PASS: combined app includes its launcher, backend wheel, setup script, and icon')
+lines = [f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}' for path in artifacts]
 (DIST / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
 print('PASS: wheel, source archive, and macOS companion are sanitized and complete')
 print('Wrote', DIST / 'SHA256SUMS')
