@@ -133,20 +133,47 @@ def show_notification(title: str, message: str, subtitle: str = ""):
 
 
 def compute_audio_levels(chunk: "np.ndarray", bars: int = 5) -> List[float]:
-    """Computes normalized 5-bar waveform levels (0.08..1.0) from a float32 PCM chunk (`AudioLevelMonitor`)."""
+    """Computes normalized 5-bar waveform levels (0.10..1.0) from a float32 PCM chunk using speech frequency bands."""
     if np is None or chunk is None or len(chunk) == 0:
         return [0.1] * bars
-    flat = chunk.flatten()
-    segments = np.array_split(flat, bars)
+    flat = chunk.flatten().astype(np.float32)
+    rms = float(np.sqrt(np.mean(np.square(flat))))
+    if rms < 0.003:
+        return [0.1] * bars
+
+    n_samples = len(flat)
+    window = np.hanning(n_samples).astype(np.float32)
+    fft_vals = np.abs(np.fft.rfft(flat * window))
+    n_bins = len(fft_vals)
+
+    # 16kHz sample rate: Nyquist = 8000 Hz. Each bin = 8000 / (n_bins - 1)
+    # Define 5 speech frequency ranges matching human vocal resonance:
+    # Band 0: Fundamental pitch (70 - 250 Hz)
+    # Band 1: First vowel formant (250 - 650 Hz)
+    # Band 2: Second vowel formant (650 - 1600 Hz)
+    # Band 3: Third formant / consonant clarity (1600 - 3500 Hz)
+    # Band 4: Sibilants / fricatives / air (3500 - 7000 Hz)
+    freq_per_bin = 8000.0 / max(1, n_bins - 1)
+    band_freqs = [
+        (70.0, 250.0),
+        (250.0, 650.0),
+        (650.0, 1600.0),
+        (1600.0, 3500.0),
+        (3500.0, 7000.0),
+    ]
+
     levels: List[float] = []
-    for seg in segments:
-        if len(seg) == 0:
-            levels.append(0.1)
-            continue
-        rms = float(np.sqrt(np.mean(np.square(seg))))
-        # Map typical speech RMS (0.005..0.18) to visual bar height (0.10..1.0)
-        norm = min(1.0, max(0.10, (rms * 7.5) ** 0.65))
-        levels.append(round(norm, 3))
+    overall_boost = min(1.0, max(0.12, (rms * 7.0) ** 0.65))
+
+    for low_f, high_f in band_freqs:
+        b_low = max(0, int(low_f / freq_per_bin))
+        b_high = min(n_bins, max(b_low + 1, int(high_f / freq_per_bin)))
+        sub = fft_vals[b_low:b_high]
+        band_mag = float(np.mean(sub)) if len(sub) > 0 else 0.0
+        norm = min(1.0, max(0.10, (band_mag * 12.0) ** 0.65))
+        blended = 0.55 * norm + 0.45 * overall_boost
+        levels.append(round(float(min(1.0, max(0.10, blended))), 3))
+
     return levels
 
 
@@ -249,6 +276,17 @@ class MaxiVoiceService:
             )
         return self._http_client
 
+    def refresh_config(self):
+        """Refreshes cached clients and warm connections when configuration changes."""
+        client = self._http_client
+        self._http_client = None
+        if client and not client.is_closed:
+            try:
+                client.close()
+            except Exception:
+                pass
+        self._prewarm_stt_connection()
+
     def _is_command_current(self, generation: int) -> bool:
         with self.lock:
             return generation == self._command_generation
@@ -303,6 +341,28 @@ class MaxiVoiceService:
         if str(key) in ("Key.alt_r", "Key.alt_gr"):
             return True
         if "<61>" in repr(key):
+            return True
+        return False
+
+    def _is_mac_option(self, key) -> bool:
+        """Identifies Mac Option key (Left or Right Option)."""
+        pref = (getattr(settings, "voice_hotkey", "auto") or "auto").lower()
+        if pref in ("right_option", "option_r", "alt_r"):
+            return self._is_mac_right_option(key)
+
+        if self._is_mac_right_option(key):
+            return True
+        if keyboard is not None and key in (keyboard.Key.alt, getattr(keyboard.Key, "alt_l", None)):
+            return True
+        if hasattr(key, "name") and key.name in ("alt", "alt_l", "option", "option_l"):
+            return True
+        if hasattr(key, "vk") and key.vk in (58, 61):
+            return True
+        if hasattr(key, "value") and hasattr(key.value, "vk") and key.value.vk in (58, 61):
+            return True
+        if str(key) in ("Key.alt", "Key.alt_l"):
+            return True
+        if "<58>" in repr(key):
             return True
         return False
 
@@ -365,8 +425,11 @@ class MaxiVoiceService:
             hid_state = Quartz.kCGEventSourceStateHIDSystemState
             sess_state = Quartz.kCGEventSourceStateCombinedSessionState
             if self._is_hotkey_pref_right_option():
-                key_down = bool(Quartz.CGEventSourceKeyState(hid_state, 0x3D)) or bool(
-                    Quartz.CGEventSourceKeyState(sess_state, 0x3D)
+                key_down = (
+                    bool(Quartz.CGEventSourceKeyState(hid_state, 0x3D))
+                    or bool(Quartz.CGEventSourceKeyState(sess_state, 0x3D))
+                    or bool(Quartz.CGEventSourceKeyState(hid_state, 0x3A))
+                    or bool(Quartz.CGEventSourceKeyState(sess_state, 0x3A))
                 )
                 alt_mask = getattr(Quartz, "kCGEventFlagMaskAlternate", 0x00080000)
                 flags_down = bool(
@@ -586,11 +649,11 @@ class MaxiVoiceService:
     def _recording_watchdog(self, session_press_time: float):
         """
         Monitors an active Push-to-Talk recording session:
-        1. Broadcasts 5-band audio levels (`AudioLevelMonitor`) to WebSocket HUD.
-        2. Polls hardware key state on macOS every 50ms (unless hands-free locked) so missed key-up events never stick the mic.
+        1. Broadcasts 5-band audio levels (`AudioLevelMonitor`) to WebSocket HUD at 33Hz.
+        2. Polls hardware key state on macOS every 30ms (unless hands-free locked) so missed key-up events never stick the mic.
         3. Enforces max_recording_seconds safety cutoff.
         """
-        time.sleep(0.15)
+        time.sleep(0.05)
         while self._running and self.is_ptt_recording and self.ptt_press_time == session_press_time:
             elapsed = time.time() - session_press_time
             if elapsed >= self.max_recording_seconds:
@@ -612,7 +675,7 @@ class MaxiVoiceService:
                 except Exception:
                     pass
 
-            if not self.is_hands_free_locked:
+            if not self.is_hands_free_locked and elapsed >= 0.18:
                 hw_down = self._is_hardware_hotkey_physically_down()
                 if hw_down is False:
                     logger.info(f"🎙️ Hardware hotkey release detected ({elapsed:.2f}s). Closing mic...")
@@ -625,7 +688,7 @@ class MaxiVoiceService:
                         self.stop_recording()
                     return
 
-            time.sleep(0.05)
+            time.sleep(0.03)
 
     # =========================================================================
     # Push-to-Talk Recording Controls
@@ -1034,7 +1097,7 @@ class MaxiVoiceService:
 
         was_already_active = self._is_hotkey_active()
 
-        if self._is_hotkey_pref_right_option() and self._is_mac_right_option(key):
+        if self._is_hotkey_pref_right_option() and self._is_mac_option(key):
             self.right_option_pressed = True
 
         if self._is_hotkey_pref_ctrl_space():
@@ -1077,7 +1140,7 @@ class MaxiVoiceService:
     def _on_release(self, key):
         was_recording = self.is_ptt_recording
 
-        if self._is_hotkey_pref_right_option() and self._is_mac_right_option(key):
+        if self._is_hotkey_pref_right_option() and self._is_mac_option(key):
             self.right_option_pressed = False
 
         if self._is_hotkey_pref_ctrl_space():
@@ -1120,9 +1183,30 @@ class MaxiVoiceService:
             threading.Thread(target=self._spawn_standby_mic_worker, daemon=True).start()
 
         if getattr(settings, "enable_tts", True):
-            logger.info(f"🔊 Siri TTS active: Voice '{settings.tts_voice}' @ {settings.tts_rate}wpm")
+            from app.core.tts import is_ollama_voice, is_kokoro_voice
+            if is_ollama_voice(settings.tts_voice):
+                provider_label = "Ollama Phonon"
+            elif is_kokoro_voice(settings.tts_voice):
+                provider_label = "Kokoro Neural"
+            else:
+                provider_label = "Siri"
+            logger.info(f"🔊 {provider_label} TTS active: Voice '{settings.tts_voice}' @ {settings.tts_rate}wpm")
 
         if settings.enable_voice_hotkey and keyboard is not None:
+            if self.is_mac:
+                try:
+                    import ApplicationServices
+                    if not ApplicationServices.AXIsProcessTrusted():
+                        logger.warning(
+                            "⚠️ Accessibility permission not granted. "
+                            "Global Push-to-Talk hotkeys require Accessibility access in "
+                            "System Settings -> Privacy & Security -> Accessibility."
+                        )
+                        kPrompt = getattr(ApplicationServices, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
+                        ApplicationServices.AXIsProcessTrustedWithOptions({kPrompt: True})
+                except Exception as e:
+                    logger.debug(f"Could not verify Accessibility trust: {e}")
+
             hotkey_name = "Right Option (⌥)" if self._is_hotkey_pref_right_option() else "Control + Space"
             try:
                 self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)

@@ -12,7 +12,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MaxiHUD",
-            path: "Sources/MaxiHUD"
+            path: "Sources/MaxiHUD",
+            resources: [.copy("Resources/Renderer")]
         )
     ]
 )

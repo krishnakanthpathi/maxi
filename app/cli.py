@@ -9,6 +9,7 @@ import time
 import argparse
 import subprocess
 import signal
+from contextlib import contextmanager
 from pathlib import Path
 import httpx
 from app import __version__
@@ -28,44 +29,90 @@ def get_pid() -> int | None:
     return None
 
 
+@contextmanager
+def daemon_lock():
+    """Hold a process lock for the backend lifetime, before writing its PID."""
+    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with (PID_FILE.parent / "daemon.lock").open("a+b") as lock:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                lock.write(b"\0")
+                lock.flush()
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise SystemExit("A Maxi backend is already starting or running.")
+        yield
+
+
 def cmd_run(args):
     """Run daemon in foreground."""
     import uvicorn
     from app.config import settings
 
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(str(os.getpid()))
-
-    try:
-        uvicorn.run(
-            "app.main:app",
-            host=settings.host,
-            port=settings.port,
-            reload=args.reload or settings.debug,
-            log_level="info",
-            timeout_graceful_shutdown=2,
-        )
-    finally:
-        PID_FILE.unlink(missing_ok=True)
+    with daemon_lock():
+        PID_FILE.write_text(str(os.getpid()))
+        try:
+            uvicorn.run(
+                "app.main:app",
+                host=settings.host,
+                port=settings.port,
+                reload=(args.reload or settings.debug) and not os.environ.get("MAXI_DAEMON_REDIRECTED"),
+                log_level="info",
+                timeout_graceful_shutdown=2,
+            )
+        finally:
+            if PID_FILE.exists() and PID_FILE.read_text().strip() == str(os.getpid()):
+                PID_FILE.unlink(missing_ok=True)
 
 
 def get_python_exe() -> str:
-    """Finds the isolated virtual environment python interpreter."""
-    v1 = Path.home() / ".maxi" / "venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-    if v1.exists():
-        return str(v1)
-    v2 = Path(__file__).resolve().parent.parent / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
-    if v2.exists():
-        return str(v2)
+    """Use the interpreter of this installed CLI, never another Maxi environment."""
     return sys.executable
 
 
+def backend_health():
+    from app.config import settings
+    host = "127.0.0.1" if settings.host == "0.0.0.0" else settings.host
+    url = f"http://{host}:{settings.port}"
+    try:
+        response = httpx.get(f"{url}/api/health", timeout=1, trust_env=False)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "ok" and data.get("service") == "Maxi Agent Daemon":
+            return data
+    except (httpx.HTTPError, ValueError, AttributeError):
+        pass
+    return None
+
+
+def require_hud_endpoint():
+    from app.config import settings
+    if settings.port != 4848 or settings.host not in ("127.0.0.1", "localhost", "0.0.0.0"):
+        raise SystemExit("The native HUD requires the backend at 127.0.0.1:4848. Set HOST=127.0.0.1 and PORT=4848 in ~/.maxi/.env, then restart Maxi.")
+
+
 def cmd_start(args):
-    """Start daemon in background process."""
+    """Start the installed backend and return success only after HTTP readiness."""
+    from app.config import settings
+
+    if getattr(args, "restart", False):
+        cmd_stop(args)
+        time.sleep(0.5)
+
+    if getattr(args, "for_hud", False):
+        require_hud_endpoint()
     existing_pid = get_pid()
-    if existing_pid:
-        print(f"⚡ Maxi daemon is already running (PID: {existing_pid}).")
+    health = backend_health()
+    if health:
+        print(f"⚡ Maxi backend is already healthy on port {settings.port}.")
         return
+    if existing_pid:
+        raise SystemExit(f"Maxi PID {existing_pid} is alive but its API is unavailable. Check {PID_FILE.parent / 'daemon.log'}; run maxi restart if needed.")
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     log_file = PID_FILE.parent / "daemon.log"
@@ -84,20 +131,34 @@ def cmd_start(args):
     with open(log_file, "a") as log_out:
         proc = subprocess.Popen(
             [py_exe, "-m", "app.cli", "run"],
+            stdin=subprocess.DEVNULL,
             stdout=log_out,
             stderr=log_out,
             env=env,
+            cwd=str(PID_FILE.parent),
             **kwargs
         )
 
-    # Give process 1-2 seconds to bind port
-    time.sleep(1.5)
+    deadline = time.monotonic() + getattr(args, "timeout", 30)
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            break
+        health = backend_health()
+        if health and health.get("pid") == proc.pid:
+            print(f"✅ Maxi backend is healthy (PID: {proc.pid}) on port {settings.port}")
+            print(f"📜 Logs: {log_file}")
+            return
+        time.sleep(0.25)
     if proc.poll() is None:
-        PID_FILE.write_text(str(proc.pid))
-        print(f"✅ Maxi daemon started (PID: {proc.pid}) on http://127.0.0.1:4848")
-        print(f"📜 Logs: {log_file}")
-    else:
-        print(f"❌ Failed to start daemon. Inspect logs at {log_file}")
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    if PID_FILE.exists() and PID_FILE.read_text().strip() == str(proc.pid):
+        PID_FILE.unlink(missing_ok=True)
+    raise SystemExit(f"Maxi backend did not become healthy. Inspect logs at {log_file}")
 
 
 def cmd_stop(args):
@@ -131,30 +192,9 @@ def cmd_restart(args):
 
 def cmd_status(args):
     """Check status of Maxi daemon and active tools."""
-    pid = get_pid()
-    try:
-        resp = httpx.get("http://127.0.0.1:4848/api/health", timeout=2.0)
-        if resp.status_code == 200:
-            print(f"⚡ Maxi Daemon: RUNNING (PID: {pid or 'External'})")
-            print("   Endpoint: http://127.0.0.1:4848")
-
-            # Check MCP tools
-            tools_resp = httpx.get("http://127.0.0.1:4848/api/mcp/tools", timeout=2.0)
-            if tools_resp.status_code == 200:
-                tools_data = tools_resp.json()
-                print(f"   MCP Tools: {tools_data.get('count', 0)} loaded")
-
-            # Check sounds
-            sounds_resp = httpx.get("http://127.0.0.1:4848/api/sounds", timeout=2.0)
-            if sounds_resp.status_code == 200:
-                sdata = sounds_resp.json()
-                active = sdata.get("active", {})
-                print(f"   Audio Theme: {active.get('start_sound')} -> {active.get('finish_sound')}")
-            return
-    except Exception:
-        pass
-
-    print("💤 Maxi Daemon: STOPPED")
+    from app.ui.terminal import render_status_card
+    health = backend_health()
+    print("\n" + render_status_card(health) + "\n")
 
 
 def _run_config_wizard():
@@ -560,48 +600,8 @@ def cmd_config(args):
         f"{tts_voice_resolved} ({'Kokoro Neural' if use_kokoro else 'macOS Siri'})",
     )
 
-    print("\n⚡ Maxi Configuration")
-    print("━" * 58)
-    print(f"🧠 LLM Provider:        {llm_preset_info}")
-    print(f"   Endpoint URL:        {cfg['llm_url']}")
-    print(f"   Model:               {cfg['llm_model']}")
-    print(f"   API Key:             {cfg['llm_key_masked']}")
-    print("")
-    print(f"🎙️ Voice STT Provider:  {voice_preset_info}")
-    print(f"   Endpoint URL:        {cfg['voice_url']}")
-    print(f"   Model:               {cfg['voice_model']}")
-    print(f"   API Key:             {cfg['voice_key_masked']}")
-    print("")
-    print(f"🔊 TTS Voice Engine:    {'Kokoro Neural TTS' if use_kokoro else 'Apple Siri TTS'} ({'Active' if cfg.get('enable_tts', True) else 'Disabled'})")
-    if use_kokoro:
-        print(f"   Endpoint URL:        {cfg.get('tts_base_url', 'http://100.75.149.115:8880/v1')}")
-    print(f"   Active Voice:        {tts_voice_resolved} — {tts_voice_label}")
-    print(f"   Speech Rate:         {cfg.get('tts_rate', 190)} WPM")
-    print(f"   Kokoro Presets:      heart, bella, nicole, fenrir, michael, puck, emma, fable")
-    print(f"   Siri Presets:        {', '.join(SIRI_VOICE_PRESETS.keys())}")
-    print("")
-    hotkey_pref = (cfg.get("voice_hotkey") or "auto").lower()
-    if hotkey_pref == "auto":
-        hotkey_name = "Right Option (⌥)" if sys.platform == "darwin" else "Control + Space"
-    elif hotkey_pref in ("right_option", "option_r", "alt_r", "option"):
-        hotkey_name = "Right Option (⌥)"
-    else:
-        hotkey_name = "Control + Space"
-
-    print("⚙️ Audio & Interface:")
-    print(f"   Push-to-Talk Hotkey: {hotkey_name} ({'Active' if cfg['hotkey_enabled'] else 'Disabled'})")
-    print(f"   Auto-Endpoint:       {'Enabled' if cfg['auto_endpoint'] else 'Disabled (Hold to speak)'}")
-    print(f"   Config File:         {cfg['env_file']}")
-    print("━" * 58)
-    print("Commands:")
-    print("  • List all TTS voices:        maxi config voices  (or: maxi tts)")
-    print("  • Switch TTS voice:           maxi tts set <kokoro|bella|fenrir|emma|tara|samantha>")
-    print("  • Preview a TTS voice:        maxi tts test <voice>")
-    print("  • Manage custom vocabulary:   maxi glossary list | add <term> [replacement]")
-    print("  • Launch floating macOS HUD:  maxi hud")
-    print("  • Switch LLM preset:          maxi config preset <ollama|groq|openrouter>")
-    print("  • Interactive wizard:         maxi config wizard")
-    print("")
+    from app.ui.terminal import render_config_card
+    print("\n" + render_config_card(cfg) + "\n")
 
 
 def cmd_glossary(args):
@@ -682,10 +682,20 @@ def cmd_hud(args):
             print("🛑 Stopped Maxi HUD.")
         return
 
+    if action != "build":
+        require_hud_endpoint()
+
+    # The wheel is backend-only. Prefer the separately installed native app.
+    if action != "build" and not getattr(args, "rebuild", False):
+        for app_dir in (Path.home() / "Applications/Maxi.app", Path("/Applications/Maxi.app")):
+            if app_dir.is_dir():
+                cmd_start(args)
+                subprocess.run(["open", str(app_dir)], check=True)
+                return
+
     macos_dir = Path(__file__).resolve().parent.parent / "frontends" / "macos"
     if not macos_dir.exists():
-        print(f"❌ macOS HUD directory not found at {macos_dir}")
-        return
+        raise SystemExit("Install the separate Maxi.app with scripts/install_macos.sh. Building the HUD requires a source checkout.")
 
     release_bin = macos_dir / ".build" / "release" / "MaxiHUD"
     debug_bin = macos_dir / ".build" / "debug" / "MaxiHUD"
@@ -702,6 +712,9 @@ def cmd_hud(args):
         if action == "build":
             return
 
+    cmd_start(args)
+    hud_env = dict(os.environ, MAXI_BACKEND_PYTHON=get_python_exe())
+
     # Stop existing HUD if running
     if HUD_PID_FILE.exists():
         try:
@@ -716,7 +729,7 @@ def cmd_hud(args):
         HUD_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         HUD_PID_FILE.write_text(str(os.getpid()))
         try:
-            subprocess.run([str(binary)])
+            subprocess.run([str(binary)], env=hud_env)
         except KeyboardInterrupt:
             pass
         finally:
@@ -730,6 +743,7 @@ def cmd_hud(args):
                 stdout=out,
                 stderr=out,
                 start_new_session=True,
+                env=hud_env,
             )
         HUD_PID_FILE.write_text(str(proc.pid))
         print(f"✨ Maxi Floating HUD launched (PID: {proc.pid})")
@@ -750,7 +764,10 @@ def main():
     p_run.add_argument("--reload", action="store_true", help="Enable live code reload")
 
     # start
-    subparsers.add_parser("start", help="Start daemon in background")
+    p_start = subparsers.add_parser("start", help="Start daemon and wait for a healthy API")
+    p_start.add_argument("--timeout", type=float, default=30, help="Startup deadline in seconds (default: 30)")
+    p_start.add_argument("--for-hud", action="store_true", help="Require the local endpoint used by the native HUD")
+    p_start.add_argument("--restart", action="store_true", help="Restart background daemon if already running")
 
     # stop
     subparsers.add_parser("stop", help="Stop background daemon")
@@ -766,6 +783,13 @@ def main():
     p_hud.add_argument("hud_action", nargs="?", choices=["start", "stop", "run", "build"], default="start", help="HUD action")
     p_hud.add_argument("--foreground", "-f", action="store_true", help="Run HUD in foreground")
     p_hud.add_argument("--rebuild", action="store_true", help="Force rebuild Swift binary before launching")
+
+    # chat
+    subparsers.add_parser("chat", help="Start interactive terminal chat session with Maxi")
+
+    # ask
+    p_ask = subparsers.add_parser("ask", help="Send a prompt to Maxi and stream the response in terminal")
+    p_ask.add_argument("query", nargs="+", help="Query or prompt for Maxi")
 
     # glossary
     p_gloss = subparsers.add_parser("glossary", help="Manage custom STT vocabulary terms and spoken replacements")
@@ -849,6 +873,13 @@ def main():
         cmd_status(args)
     elif args.command == "hud":
         cmd_hud(args)
+    elif args.command == "chat":
+        from app.ui.terminal import run_interactive_chat
+        run_interactive_chat()
+    elif args.command == "ask":
+        import asyncio
+        from app.ui.terminal import stream_agent_response
+        asyncio.run(stream_agent_response(" ".join(args.query)))
     elif args.command == "glossary":
         cmd_glossary(args)
     elif args.command == "tts":

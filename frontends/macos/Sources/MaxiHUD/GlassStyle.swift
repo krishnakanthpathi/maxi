@@ -14,12 +14,13 @@ private struct GlassSurface<Surface: InsettableShape>: ViewModifier {
         if reduceTransparency {
             content
                 .background(Color(nsColor: .windowBackgroundColor), in: shape)
-                .overlay(shape.strokeBorder(Color.primary.opacity(0.3), lineWidth: 1))
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.3), lineWidth: 1).allowsHitTesting(false))
         } else {
             surface(content)
                 .overlay {
                     if contrast == .increased {
                         shape.strokeBorder(Color.primary.opacity(0.45), lineWidth: 1)
+                            .allowsHitTesting(false)
                     }
                 }
         }
@@ -51,7 +52,7 @@ private struct GlassSurface<Surface: InsettableShape>: ViewModifier {
                         ))
                     }
             }
-            .overlay(shape.strokeBorder(.white.opacity(0.24), lineWidth: 0.75))
+            .overlay(shape.strokeBorder(.white.opacity(0.24), lineWidth: 0.75).allowsHitTesting(false))
             .shadow(color: .black.opacity(0.16), radius: 16, x: 0, y: 6)
     }
 }

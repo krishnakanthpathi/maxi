@@ -79,11 +79,6 @@ packages = ["app"]
 [tool.hatch.version]
 path = "app/__init__.py"
 
-# maxi hud builds these sources after a wheel install, including on a fresh Mac.
-[tool.hatch.build.targets.wheel.force-include]
-"frontends/macos/Package.swift" = "frontends/macos/Package.swift"
-"frontends/macos/Sources" = "frontends/macos/Sources"
-
 [tool.hatch.build.targets.sdist]
 include = ["/app", "/frontends/macos/Package.swift", "/frontends/macos/Sources", "/scripts", "/tests", "/assets", "/README.md", "/CHANGELOG.md", "/LICENSE", "/.env.example", "/pyproject.toml", "/requirements.txt", "/docs", "/releases", "/.maxi/mcp_config.example.json", "/.maxi/skills"]
 exclude = ["**/__pycache__", "**/*.pyc", "**/.DS_Store"]

@@ -30,15 +30,16 @@ def _get_lmem_env() -> dict:
         "/Library/Frameworks/Python.framework/Versions/3.12/bin",
     ]
     env = dict(os.environ)
-    existing = env.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
-    env["PATH"] = ":".join(extra_paths) + ":" + existing
+    existing = env.get("PATH", os.defpath)
+    # Respect the daemon's active environment before looking in fallback installs.
+    env["PATH"] = os.pathsep.join(dict.fromkeys(existing.split(os.pathsep) + extra_paths))
     env["HOME"] = home
     return env
 
 
 def _run_lmem(args: List[str], timeout_s: float = 12.0) -> str:
     env = _get_lmem_env()
-    bin_path = shutil.which("lmem", path=env["PATH"]) or "lmem"
+    bin_path = env.get("MAXI_LMEM_BIN") or shutil.which("lmem", path=env["PATH"]) or "lmem"
     try:
         res = subprocess.run(
             [bin_path] + args,
@@ -48,12 +49,26 @@ def _run_lmem(args: List[str], timeout_s: float = 12.0) -> str:
             timeout=timeout_s,
         )
         output = (res.stdout or "").strip()
-        if not output and res.stderr:
-            output = res.stderr.strip()
+        error = (res.stderr or "").strip()
+        if res.returncode != 0:
+            details = "\n".join(part for part in (error, output) if part)
+            if "schema is newer" in details.lower():
+                return (
+                    f"Error: LightMem at {bin_path} is older than the memory database schema. "
+                    "Upgrade that LightMem executable to a version supporting this schema. "
+                    "Keep the existing database; do not downgrade or recreate it.\n" + details
+                )
+            return f"Error: LightMem exited with code {res.returncode}.\n{details or 'No error details returned.'}"
+        if not output and args and args[0] == "remember":
+            return "Error: LightMem exited without confirming that the memory was saved."
         return output or "No memories found matching query."
-    except Exception as e:
-        logger.error(f"Error running lmem with args {args}: {e}")
-        return f"Error executing lmem: {str(e)}"
+    except subprocess.TimeoutExpired:
+        return f"Error: LightMem did not finish within {timeout_s:g} seconds. The operation may still need verification."
+    except FileNotFoundError:
+        return f"Error: LightMem executable not found at {bin_path}. Install lmem or set MAXI_LMEM_BIN to its executable path."
+    except OSError as e:
+        logger.error("Could not launch LightMem: %s", type(e).__name__)
+        return f"Error executing LightMem: {e}"
 
 
 @tool
@@ -77,7 +92,7 @@ def lmem_answer(question: str) -> str:
     """
     clean_q = question.strip().strip("'\"")
     logger.info(f"🧠 Querying LMEM memory answer for: \"{clean_q}\"")
-    return _run_lmem(["answer", clean_q])
+    return _run_lmem(["answer", clean_q, "--global"])
 
 
 @tool
@@ -89,7 +104,7 @@ def lmem_remember(content: str) -> str:
     """
     clean_content = content.strip().strip("'\"")
     logger.info(f"🧠 Persisting memory to LMEM: \"{clean_content}\"")
-    return _run_lmem(["remember", clean_content])
+    return _run_lmem(["remember", clean_content, "--global"])
 
 
 def auto_recall_memories(prompt: str, limit: int = 2, min_score: float = 0.35) -> str:

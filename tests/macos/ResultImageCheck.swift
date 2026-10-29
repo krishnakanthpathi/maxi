@@ -3,10 +3,16 @@ import SwiftUI
 // Network and app-icon lookup are irrelevant to result-image handling.
 @MainActor final class WebSocketClient {
     static let shared = WebSocketClient()
-    func setAutoSpeech(enabled: Bool) {}
-    func clearContext() {}
+    func setAutoSpeech(enabled: Bool, completion: (() -> Void)? = nil) {}
+    func clearContext(completion: (() -> Void)? = nil) {}
     func cancelActiveCommand() {}
     func stopTTS() {}
+    func reloadDaemon(completion: (() -> Void)? = nil) {}
+    func restartDaemon(completion: (() -> Void)? = nil) {}
+    func reconnect() {}
+}
+enum BackendBootstrap {
+    @MainActor static func start(onReady: @escaping @MainActor () -> Void) { onReady() }
 }
 func getAppIcon(for name: String) -> NSImage? { nil }
 

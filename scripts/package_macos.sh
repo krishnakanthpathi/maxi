@@ -13,8 +13,9 @@ arch="$(uname -m)"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/maxi-release.XXXXXX")"
 trap 'rm -rf "$stage_dir"' EXIT
 app_dir="$stage_dir/Maxi.app/Contents"
-mkdir -p "$app_dir/MacOS" "$repo_root/dist"
+mkdir -p "$app_dir/MacOS" "$app_dir/Resources" "$repo_root/dist"
 cp "$bin_dir/MaxiHUD" "$app_dir/MacOS/MaxiHUD"
+cp -R "$repo_root/frontends/macos/Sources/MaxiHUD/Resources/Renderer" "$app_dir/Resources/Renderer"
 python3 - "$app_dir/Info.plist" <<'PY'
 import plistlib, sys
 from pathlib import Path
@@ -22,7 +23,7 @@ info = {
     'CFBundleDisplayName': 'Maxi', 'CFBundleName': 'Maxi',
     'CFBundleExecutable': 'MaxiHUD', 'CFBundleIdentifier': 'com.maxi.hud',
     'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.3.0',
-    'CFBundleVersion': '1', 'LSMinimumSystemVersion': '14.0',
+    'CFBundleVersion': '9', 'LSMinimumSystemVersion': '14.0',
     'LSUIElement': True, 'NSHighResolutionCapable': True,
 }
 with Path(sys.argv[1]).open('wb') as target:

@@ -9,5 +9,6 @@ for source in "$repo_root"/frontends/macos/Sources/MaxiHUD/*.swift; do
     sources+=("$source")
 done
 swiftc -D MAXI_HUD_TESTING -parse-as-library "${sources[@]}" \
-    "$repo_root/tests/macos_hud/HUDRecoveryChecks.swift" -o "$check_dir/HUDRecoveryChecks"
+    "$repo_root/tests/macos_hud/HUDRecoveryChecks.swift" \
+    "$repo_root/tests/macos_hud/AutoHideChecks.swift" -o "$check_dir/HUDRecoveryChecks"
 "$check_dir/HUDRecoveryChecks"

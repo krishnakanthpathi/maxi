@@ -27,7 +27,9 @@ class SkillToggleRequest(BaseModel):
 
 @router.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "Maxi Agent Daemon"}
+    import os
+    from app import __version__
+    return {"status": "ok", "service": "Maxi Agent Daemon", "pid": os.getpid(), "version": __version__}
 
 
 @router.post("/prompt")
@@ -79,6 +81,34 @@ async def cancel_voice():
     return {"status": "cancelled", "message": "Active voice/agent execution aborted."}
 
 
+@router.post("/voice/start")
+async def start_voice(locked: bool = True):
+    """Start hands-free voice recording via API or HUD UI."""
+    from app.core.voice_service import voice_service
+    voice_service.start_recording(locked=locked)
+    return {"status": "recording", "locked": locked}
+
+
+@router.post("/voice/stop")
+async def stop_voice():
+    """Stop active voice recording and process speech."""
+    from app.core.voice_service import voice_service
+    voice_service.stop_recording()
+    return {"status": "processing"}
+
+
+@router.post("/voice/toggle")
+async def toggle_voice():
+    """Toggle voice recording on/off via HUD pill tap."""
+    from app.core.voice_service import voice_service
+    if voice_service.is_ptt_recording:
+        voice_service.stop_recording()
+        return {"status": "processing"}
+    else:
+        voice_service.start_recording(locked=True)
+        return {"status": "recording"}
+
+
 @router.get("/skills", response_model=List[Skill])
 async def list_skills():
     return skill_registry.list_skills()
@@ -127,16 +157,58 @@ async def get_history(limit: int = Query(50, ge=1, le=500)):
 
 @router.post("/reload")
 async def reload_configuration():
-    """Hot-reload skills from .maxi/skills/*.md and MCP servers from .maxi/mcp_config.json."""
+    """Hot-reload .env, settings, skills from .maxi/skills/*.md and MCP servers from .maxi/mcp_config.json."""
+    from pathlib import Path
+    from dotenv import load_dotenv
+    from app.config import settings, Settings
     from app.core.mcp_client import mcp_manager
+
+    # 1. Reload environment variables from ~/.maxi/.env and .env
+    env_file = Path.home() / ".maxi" / ".env"
+    if env_file.exists():
+        load_dotenv(dotenv_path=env_file, override=True)
+    if Path(".env").exists():
+        load_dotenv(dotenv_path=".env", override=True)
+
+    # 2. Reload Settings object in-place so all modules referencing settings pick up new values
+    new_settings = Settings()
+    for k, v in new_settings.model_dump().items():
+        setattr(settings, k, v)
+
+    # 3. Reload skills and MCP servers
     skill_registry.reload()
     await mcp_manager.connect_all()
     tools = mcp_manager.get_tools()
+
+    # 4. Refresh voice service connections/caches
+    from app.core.voice_service import voice_service
+    if voice_service:
+        voice_service.refresh_config()
+
     return {
         "status": "reloaded",
+        "model": settings.openai_model,
+        "tts_provider": getattr(settings, "tts_provider", "kokoro"),
+        "tts_voice": getattr(settings, "tts_voice", "Hugh"),
         "skills_count": len(skill_registry.list_skills()),
         "mcp_tools_count": len(tools)
     }
+
+
+@router.post("/restart")
+async def restart_daemon():
+    """Restarts the Maxi background daemon."""
+    import sys
+    import subprocess
+    import asyncio
+
+    async def _do_restart():
+        await asyncio.sleep(0.3)
+        py = sys.executable
+        subprocess.Popen([py, "-m", "app.cli", "restart"], start_new_session=True)
+
+    asyncio.create_task(_do_restart())
+    return {"status": "restarting"}
 
 
 class SoundPlayRequest(BaseModel):
@@ -300,7 +372,7 @@ async def list_available_models():
             models.remove(current_model)
         models.insert(0, current_model)
     elif not models:
-        models = ["gpt-oss:120b-cloud", "gemma4:31b-cloud", "llama-3.3-70b-versatile"]
+        models = ["gemma2:31b-cloud", "gpt-oss:120b-cloud", "llama-3.3-70b-versatile"]
 
     return {
         "status": "ok",

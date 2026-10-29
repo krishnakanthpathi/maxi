@@ -19,16 +19,32 @@ struct FiveBandWaveformView: View {
     let levels: [CGFloat]
     let accentColor: Color
     let isAnimated: Bool
+    var isSpeaking = false
+    var isLiveStreamed = false
 
     var body: some View {
+        Group {
+            if isSpeaking && !isLiveStreamed {
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isAnimated)) { context in
+                    bands(SpeechWaveform.levels(at: isAnimated ? context.date.timeIntervalSinceReferenceDate : 0))
+                }
+                .accessibilityLabel("Speech playback waveform")
+            } else {
+                bands(levels)
+                    .accessibilityLabel(isSpeaking ? "Speech playback waveform" : "Microphone levels")
+            }
+        }
+    }
+
+    private func bands(_ values: [CGFloat]) -> some View {
         HStack(spacing: 3.5) {
-            ForEach(0..<min(levels.count, 5), id: \.self) { idx in
-                let raw = levels[idx]
+            ForEach(0..<min(values.count, 5), id: \.self) { idx in
+                let raw = values[idx]
                 let height = max(4.0, min(20.0, raw * 20.0))
                 Capsule(style: .continuous)
                     .fill(accentColor)
-                    .frame(width: 3.2, height: isAnimated ? height : 4.5)
-                    .animation(isAnimated ? .interactiveSpring(response: 0.08, dampingFraction: 0.62) : nil, value: height)
+                    .frame(width: 3.2, height: height)
+                    .animation(isAnimated ? .interactiveSpring(response: 0.07, dampingFraction: 0.70) : nil, value: height)
             }
         }
         .frame(height: 20)
@@ -39,12 +55,6 @@ func stripSpeechTag(from text: String) -> String {
     var result = text
     let speechPattern = #"<speech>[\s\S]*?</speech>"#
     if let regex = try? NSRegularExpression(pattern: speechPattern, options: .caseInsensitive) {
-        let nsString = result as NSString
-        let range = NSRange(location: 0, length: nsString.length)
-        result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
-    }
-    let imgPattern = #"!\[.*?\]\([^\)]+\)"#
-    if let regex = try? NSRegularExpression(pattern: imgPattern, options: .caseInsensitive) {
         let nsString = result as NSString
         let range = NSRange(location: 0, length: nsString.length)
         result = regex.stringByReplacingMatches(in: result, options: [], range: range, withTemplate: "")
@@ -79,43 +89,6 @@ struct ToastCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "sum")
-                    .font(.system(size: 14, weight: .semibold))
-                    .accessibilityLabel("Maxi summation logo")
-                Text("Maxi")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-
-                Button(action: { state.clearContext() }) {
-                    controlIcon(state.contextClearedFeedback ? "checkmark" : "plus")
-                }
-                .buttonStyle(HUDButtonStyle(isSelected: state.contextClearedFeedback))
-                .accessibilityLabel("New chat")
-                .help(state.contextClearedFeedback ? "New chat started" : "New chat · Clear recent conversation")
-
-                Button(action: { state.toggleAutoHide() }) {
-                    controlIcon(state.autoHideEnabled ? "pin" : "pin.fill")
-                }
-                .buttonStyle(HUDButtonStyle(isSelected: !state.autoHideEnabled))
-                .accessibilityLabel(state.autoHideEnabled ? "Pin response" : "Unpin response")
-                .help(state.autoHideEnabled ? "Keep this response visible" : "Allow response to auto-dismiss")
-
-                Button(action: { state.toggleAutoSpeech() }) {
-                    controlIcon(state.autoSpeechEnabled ? "speaker.wave.2" : "speaker.slash")
-                }
-                .buttonStyle(HUDButtonStyle(isSelected: state.autoSpeechEnabled))
-                .accessibilityLabel(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
-                .help(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
-
-                Button(action: { state.dismissToast() }) {
-                    controlIcon("xmark")
-                }
-                .buttonStyle(HUDButtonStyle())
-                .accessibilityLabel("Dismiss response")
-                .help("Dismiss response")
-            }
-
             HStack(alignment: .top, spacing: 10) {
                 Text(state.transcript.isEmpty ? "Listening…" : state.transcript)
                     .font(.system(size: 13, weight: .medium))
@@ -184,15 +157,8 @@ struct ToastCardView: View {
             if !state.agentOutput.isEmpty {
                 Divider()
 
-                ScrollView(.vertical) {
-                    Text(LocalizedStringKey(stripSpeechTag(from: state.agentOutput)))
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineSpacing(4)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: state.qrImage == nil ? 220 : 100)
+                RichResponseView(markdown: stripSpeechTag(from: state.agentOutput))
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 10) {
                     if state.latencyMs > 0 {
@@ -233,14 +199,12 @@ struct ToastCardView: View {
                             .frame(height: 28)
                     }
                     .buttonStyle(HUDButtonStyle(isSelected: state.copiedFeedback))
-                    .accessibilityLabel("Copy response")
+                    .accessibilityLabel(state.copiedFeedback ? "Response copied" : "Copy response")
                 }
             }
         }
         .padding(18)
-        .frame(maxWidth: 540)
-        .maxiGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .onHover { state.setHovering($0) }
+        .frame(maxWidth: .infinity)
     }
 
     private func controlIcon(_ symbol: String) -> some View {
@@ -249,6 +213,70 @@ struct ToastCardView: View {
             .frame(width: 28, height: 28)
     }
 }
+
+struct ResponseHeaderView: View {
+    @ObservedObject var state: AppState
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sum")
+                .font(.system(size: 14, weight: .semibold))
+                .accessibilityLabel("Maxi summation logo")
+            Text("Maxi")
+                .font(.system(size: 13, weight: .semibold))
+            Spacer()
+
+            Button(action: { state.clearContext() }) {
+                cardIcon(state.contextClearedFeedback ? "checkmark" : "plus")
+            }
+            .buttonStyle(HUDButtonStyle(isSelected: state.contextClearedFeedback))
+            .disabled(!state.wsConnected)
+            .accessibilityLabel("New chat")
+            .help(state.contextClearedFeedback ? "New chat started" : "New chat · Clear recent conversation")
+
+            Button(action: { state.toggleAutoHide() }) {
+                cardIcon(state.autoHideEnabled ? "pin" : "pin.fill")
+            }
+            .buttonStyle(HUDButtonStyle(isSelected: !state.autoHideEnabled))
+            .accessibilityLabel(state.autoHideEnabled ? "Pin response" : "Unpin response")
+            .help(state.autoHideEnabled ? "Keep this response visible" : "Allow response to auto-dismiss")
+
+            Button(action: { state.toggleAutoSpeech() }) {
+                cardIcon(state.autoSpeechEnabled ? "speaker.wave.2" : "speaker.slash")
+            }
+            .buttonStyle(HUDButtonStyle(isSelected: state.autoSpeechEnabled))
+            .disabled(!state.wsConnected)
+            .accessibilityLabel(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
+            .help(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
+
+            Button(action: { state.openEnvConfig() }) {
+                cardIcon("slider.horizontal.3")
+            }
+            .buttonStyle(HUDButtonStyle())
+            .accessibilityLabel("Edit Environment Config")
+            .help("Edit Environment Config (~/.maxi/.env)")
+
+            Button(action: { state.reloadConfig() }) {
+                cardIcon(state.configReloadFeedback ? "checkmark" : "arrow.clockwise")
+            }
+            .buttonStyle(HUDButtonStyle(isSelected: state.configReloadFeedback))
+            .disabled(!state.wsConnected)
+            .accessibilityLabel(state.configReloadFeedback ? "Configuration reloaded" : "Reload configuration")
+            .help(state.configReloadFeedback ? "Configuration reloaded" : "Reload Configuration (.env, Skills, MCP)")
+
+            Button(action: { state.dismissToast() }) {
+                cardIcon("xmark")
+            }
+            .buttonStyle(HUDButtonStyle())
+            .accessibilityLabel("Dismiss response")
+            .help("Dismiss response")
+        }
+
+    }
+    private func cardIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 14, weight: .medium)).frame(width: 28, height: 28)
+    }
+}
+
 
 struct MaxiPillBarView: View {
     @ObservedObject var state: AppState
@@ -288,48 +316,11 @@ struct MaxiPillBarView: View {
 
     var body: some View {
         HStack(spacing: 8.5) {
-            // Compact status indicator
-            switch state.mode {
-            case .idle:
-                Image(systemName: state.wsConnected ? "sum" : "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14, height: 14)
-            case .recording(let locked):
-                if locked {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 14, height: 14)
-                }
-            case .processing:
-                Group {
-                    if state.currentExecutingTool != nil {
-                        Image(systemName: "terminal.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.primary)
-                    } else {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                }
+            Image(systemName: "sum")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
                 .frame(width: 14, height: 14)
-            case .speaking:
-                Image(systemName: "waveform")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 14, height: 14)
-            case .result:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 14, height: 14)
-            case .cancelled:
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14, height: 14)
-            }
+                .accessibilityLabel("Maxi summation logo")
 
             // Show the app icon directly, without a surrounding badge.
             if case .recording = state.mode {
@@ -354,7 +345,9 @@ struct MaxiPillBarView: View {
                 FiveBandWaveformView(
                     levels: state.audioLevels,
                     accentColor: .primary,
-                    isAnimated: !reduceMotion
+                    isAnimated: !reduceMotion,
+                    isSpeaking: state.mode == .speaking,
+                    isLiveStreamed: state.isStreamingTTSAudio
                 )
             }
 
@@ -402,6 +395,7 @@ struct MaxiPillBarView: View {
                     .frame(width: 26, height: 26)
             }
             .buttonStyle(HUDButtonStyle())
+            .disabled(!state.wsConnected)
             .accessibilityLabel(state.autoSpeechEnabled ? "Mute speech" : "Enable speech")
             .help(state.autoSpeechEnabled ? "Auto-Speech active (click to mute)" : "Auto-Speech muted (click to unmute)")
         }
@@ -414,6 +408,10 @@ struct MaxiPillBarView: View {
             if state.mode == .speaking {
                 WebSocketClient.shared.stopTTS()
                 state.handleTTSStop()
+            } else if case .recording = state.mode {
+                WebSocketClient.shared.toggleVoice()
+            } else if state.mode == .idle && (!state.showToast || (state.agentOutput.isEmpty && state.transcript.isEmpty)) {
+                WebSocketClient.shared.toggleVoice()
             } else if !state.agentOutput.isEmpty || !state.transcript.isEmpty {
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
                     state.showToast.toggle()
@@ -423,6 +421,15 @@ struct MaxiPillBarView: View {
         .contextMenu {
             Button(action: { state.clearContext() }) {
                 Label("New Chat", systemImage: "plus")
+            }
+            Button(action: { state.openEnvConfig() }) {
+                Label("Edit Environment Config (.env)", systemImage: "slider.horizontal.3")
+            }
+            Button(action: { state.reloadConfig() }) {
+                Label("Reload Configuration", systemImage: "arrow.clockwise")
+            }
+            Button(action: { state.restartMaxi() }) {
+                Label("Restart Maxi", systemImage: "bolt.fill")
             }
             Divider()
             Button(action: { state.toggleAutoHide() }) {
@@ -447,55 +454,70 @@ struct MaxiPillBarView: View {
                 state.setPosition(.topNotch)
             }
             Button(state.alwaysShowIdlePill ? "Hide Idle Pill" : "Always Show Idle Pill") {
-                state.alwaysShowIdlePill.toggle()
-                state.onLayoutChange?()
+                state.setAlwaysShowIdle(!state.alwaysShowIdlePill)
             }
         }
     }
 }
 
 typealias WillowPillBarView = MaxiPillBarView
+private typealias HUDViewState<Value> = SwiftUI.State<Value>
 
 struct HUDView: View {
     @ObservedObject var state = AppState.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @HUDViewState private var responseHeight: CGFloat = 260
+
+    private var atTop: Bool { state.positionMode == .topNotch }
+
+    private var responseCard: some View {
+        VStack(spacing: 0) {
+            ResponseHeaderView(state: state).padding([.top, .horizontal], 18)
+            ScrollView(.vertical) {
+                ToastCardView(state: state)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: ToastHeightPreference.self, value: geometry.size.height)
+                    })
+            }
+            .frame(height: min(responseHeight, state.maximumBodyHeight))
+            .onPreferenceChange(ToastHeightPreference.self) { if $0 > 1 { responseHeight = $0 } }
+            .id(state.agentOutput)
+        }
+        .frame(width: 540)
+        .maxiGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .transition(.opacity)
+    }
 
     var body: some View {
-        HUDGlassGroup {
-            VStack(spacing: 14) {
-                if state.positionMode == .bottomDock {
-                    Spacer(minLength: 0)
-                    if state.showToast {
-                        ToastCardView(state: state)
-                            .transition(.asymmetric(
-                                insertion: reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity),
-                                removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96))
-                            ))
-                    }
-                    if state.isHUDVisible {
+        Group {
+            if state.isPanelVisible {
+                HUDGlassGroup {
+                    VStack(spacing: HUDGeometry.cardGap) {
+                        if !atTop && state.showToast { responseCard }
                         MaxiPillBarView(state: state)
+                            .fixedSize()
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(key: PillSizePreference.self, value: geometry.size)
+                            })
+                        if atTop && state.showToast { responseCard }
                     }
-                } else {
-                    if state.isHUDVisible {
-                        MaxiPillBarView(state: state)
-                    }
-                    if state.showToast {
-                        ToastCardView(state: state)
-                            .transition(.asymmetric(
-                                insertion: reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity),
-                                removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96))
-                            ))
-                    }
-                    Spacer(minLength: 0)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: HUDSizePreference.self, value: geometry.size)
+                    })
+                    .onHover { state.setHovering($0) }
+                    .opacity(state.isHUDVisible ? 1 : 0)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: state.isHUDVisible)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.86), value: state.showToast)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: state.positionMode == .bottomDock ? .bottom : .top)
         }
-        .transaction { transaction in
-            if reduceMotion { transaction.animation = nil }
-        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: atTop ? .top : .bottom)
+        .onPreferenceChange(HUDSizePreference.self) { state.renderedSize = $0 }
+        .onPreferenceChange(PillSizePreference.self) { state.pillSize = $0 }
+        .transaction { if reduceMotion { $0.animation = nil } }
     }
 }

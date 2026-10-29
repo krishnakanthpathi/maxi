@@ -1,167 +1,296 @@
-#!/usr/bin/env bash
-#
-# Maxi Universal Cross-Platform Installer ⚡
-# Usage: curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash
-#
+#!/bin/bash
+# Install the Maxi backend and platform app/binary with a single command.
+# curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash
 set -euo pipefail
 
-# macOS uses the compiled app + automatic Python installer, including curl use.
-if [[ "$(uname -s)" == Darwin ]]; then
-    local_installer="$(dirname "${BASH_SOURCE[0]:-$0}")/install_macos.sh"
-    if [[ -n "${BASH_SOURCE[0]:-}" && -f "$local_installer" ]]; then
-        exec /bin/bash "$local_installer" "$@"
-    fi
-    downloaded_installer="$(mktemp "${TMPDIR:-/tmp}/maxi-bootstrap.XXXXXX")"
-    trap 'rm -f "$downloaded_installer"' EXIT
-    curl -fsSL --retry 3 https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install_macos.sh -o "$downloaded_installer"
-    /bin/bash "$downloaded_installer" "$@"
-    exit $?
-fi
+release='0.3.0-beta.1'
+python_version='0.3.0b1'
+uv_version='0.11.32'
+release_url="https://github.com/krishnakanthpathi/maxi/releases/download/v${release}"
+archive_name="Maxi-${release}-macos-universal.zip"
+wheel_name="maxi_ai-${python_version}-py3-none-any.whl"
+install_dir="${MAXI_INSTALL_DIR:-$HOME/.maxi}"
+apps_dir="${MAXI_APPS_DIR:-$HOME/Applications}"
+bin_dir="${MAXI_BIN_DIR:-$HOME/.local/bin}"
+app_source=''
+binary_source=''
+wheel_source=''
+configure=1
+launch=1
+open_hud=1
 
-# Visual styling
-BOLD="\033[1m"
-GREEN="\033[32m"
-CYAN="\033[36m"
-YELLOW="\033[33m"
-RED="\033[31m"
-RESET="\033[0m"
+die() { printf 'Maxi: %s\n' "$*" >&2; exit 1; }
 
-echo -e "${CYAN}${BOLD}"
-echo "  __  __              _ "
-echo " |  \/  | __ ___  __ (_)"
-echo " | |\/| |/ _\` \ \/ / | |"
-echo " | |  | | (_| |>  <  | |"
-echo " |_|  |_|\__,_/_/\_\ |_|"
-echo -e "${RESET}"
-echo -e "${BOLD}⚡ Maxi Universal Workstation Daemon Installer${RESET}"
-echo ""
-
-# 1. OS & Architecture Detection
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-echo -e "🔍 Detected Platform: ${GREEN}${OS} (${ARCH})${RESET}"
-
-# 2. Python Environment Check
-PYTHON_BIN=""
-for cmd in python3.12 python3.11 python3.10 python3 python; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-        PY_VER="$($cmd -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-        PY_MAJOR="$(echo "$PY_VER" | cut -d. -f1)"
-        PY_MINOR="$(echo "$PY_VER" | cut -d. -f2)"
-        if [ "$PY_MAJOR" -ge 3 ] && [ "$PY_MINOR" -ge 10 ]; then
-            PYTHON_BIN="$cmd"
-            echo -e "🐍 Found Python: ${GREEN}$($cmd --version)${RESET} (${cmd})"
-            break
-        fi
-    fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --app-source) [[ $# -ge 2 ]] || die '--app-source needs a path'; app_source="$2"; shift 2 ;;
+        --binary-source) [[ $# -ge 2 ]] || die '--binary-source needs a path'; binary_source="$2"; shift 2 ;;
+        --wheel-source) [[ $# -ge 2 ]] || die '--wheel-source needs a path'; wheel_source="$2"; shift 2 ;;
+        --no-configure) configure=0; shift ;;
+        --no-launch) launch=0; shift ;;
+        --no-hud) open_hud=0; shift ;;
+        --help|-h)
+            printf '%s\n' 'Install Maxi for macOS (14+) and Linux.' \
+                '  --app-source PATH     Use a local Maxi.app on macOS.' \
+                '  --binary-source PATH  Use a local GUI/HUD binary.' \
+                '  --wheel-source PATH   Use a local wheel and adjacent SHA256SUMS manifest.' \
+                '  --no-configure        Skip the interactive provider wizard.' \
+                '  --no-launch           Install without starting the daemon or HUD.' \
+                '  --no-hud              Start and verify the backend without opening the HUD.' \
+                'Existing provider configuration and saved memories are preserved.'
+            exit 0 ;;
+        *) die "Unknown option: $1" ;;
+    esac
 done
 
-if [ -z "$PYTHON_BIN" ]; then
-    echo -e "${RED}❌ Python 3.10+ is required but was not found on your system.${RESET}"
-    if [ "$OS" = "Darwin" ]; then
-        echo -e "👉 Install via Homebrew: ${CYAN}brew install python@3.12${RESET}"
-    else
-        echo -e "👉 Install via APT: ${CYAN}sudo apt install -y python3 python3-pip python3-venv${RESET}"
-    fi
-    exit 1
+OS="$(uname -s)"
+case "$OS" in
+    Darwin)
+        case "$(uname -m)" in arm64|x86_64) ;; *) die 'Unsupported Mac architecture.' ;; esac
+        os_major="$(sw_vers -productVersion | cut -d. -f1)"
+        [[ "$os_major" -ge 14 ]] || die 'Maxi needs macOS 14 or later.'
+        ;;
+    Linux)
+        case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) die 'Unsupported Linux architecture.' ;; esac
+        ;;
+    *)
+        die "Unsupported platform: $OS. Maxi supports macOS and Linux."
+        ;;
+esac
+
+[[ "$EUID" -ne 0 ]] || die 'Run this as your normal user, without sudo.'
+for directory in "$install_dir" "$bin_dir"; do
+    [[ "$directory" == /* ]] || die "Installation paths must be absolute: $directory"
+done
+if [[ "$OS" == "Darwin" ]]; then
+    [[ "$apps_dir" == /* ]] || die "Installation paths must be absolute: $apps_dir"
 fi
 
-# 3. OS-Specific Audio Dependencies (Linux)
-INSTALL_EXTRAS="[voice]"
-if [ "$OS" = "Linux" ]; then
-    if ! command -v ldconfig >/dev/null 2>&1 || ! ldconfig -p | grep -q "libportaudio"; then
-        echo -e "${YELLOW}⚠️  PortAudio not found. Installing Linux audio libraries...${RESET}"
-        if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev portaudio19-dev || true
-        elif command -v pacman >/dev/null 2>&1; then
-            sudo pacman -S --noconfirm portaudio alsa-lib || true
-        elif command -v dnf >/dev/null 2>&1; then
-            sudo dnf install -y portaudio-devel alsa-lib-devel || true
-        else
-            echo -e "${YELLOW}ℹ️  Could not auto-install portaudio headers. Defaulting to core backend.${RESET}"
-            INSTALL_EXTRAS=""
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/maxi-install.XXXXXX")"
+trap 'rm -rf "$work_dir"' EXIT
+
+fetch() { curl --fail --location --silent --show-error --retry 3 --connect-timeout 20 --output "$2" "$1"; }
+
+verify() {
+    local path="$1" manifest="$2" name expected actual
+    name="$(basename "$path")"
+    expected="$(awk -v name="$name" '$2 == name { print $1 }' "$manifest")"
+    [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || die "No unique checksum for $name"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$path" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$path" | awk '{print $1}')"
+    else
+        die "Neither sha256sum nor shasum is available to verify downloads."
+    fi
+    [[ "$actual" == "$expected" ]] || die "Checksum mismatch for $name. This artifact was not installed."
+}
+
+printf '\n∑ Maxi · %s installer\n\n' "$OS"
+
+# 1. Download or verify Python backend wheel
+if [[ -n "$wheel_source" ]]; then
+    [[ "$(basename "$wheel_source")" == "$wheel_name" ]] || die "Expected $wheel_name"
+    wheel_source="$(cd "$(dirname "$wheel_source")" && pwd -P)/$wheel_name"
+    wheel="$wheel_source"
+    verify "$wheel" "$(dirname "$wheel")/SHA256SUMS"
+else
+    printf 'Downloading the Python backend wheel…\n'
+    fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
+    fetch "$release_url/$wheel_name" "$work_dir/$wheel_name"
+    wheel="$work_dir/$wheel_name"
+    verify "$wheel" "$work_dir/SHA256SUMS"
+fi
+
+mkdir -p "$install_dir" "$bin_dir"
+chmod 700 "$install_dir"
+if [[ "$OS" == "Darwin" ]]; then
+    mkdir -p "$apps_dir"
+fi
+
+# 2. Setup standalone uv & managed Python 3.12 (no root / sudo required)
+uv_bin="$install_dir/tools/uv"
+if [[ ! -x "$uv_bin" ]]; then
+    printf 'Setting up Maxi’s Python installer…\n'
+    fetch "https://astral.sh/uv/${uv_version}/install.sh" "$work_dir/uv-install.sh"
+    UV_UNMANAGED_INSTALL="$install_dir/tools" sh "$work_dir/uv-install.sh"
+fi
+export UV_PYTHON_INSTALL_DIR="$install_dir/python"
+export UV_CACHE_DIR="$install_dir/cache/uv"
+export UV_PYTHON_DOWNLOADS=automatic
+export UV_NO_CONFIG=1
+venv="$install_dir/venv"
+if [[ ! -x "$venv/bin/python" ]]; then
+    [[ ! -e "$venv" ]] || die "An incomplete environment exists at $venv. Move it aside and retry."
+    printf 'Preparing Python 3.12 (downloaded automatically if needed)…\n'
+    "$uv_bin" venv --managed-python --python 3.12 --seed "$venv"
+fi
+"$venv/bin/python" -c 'import sys; assert sys.version_info >= (3, 10), "Python 3.10+ is required"'
+
+# 3. Audio dependency check for Linux
+if [[ "$OS" == "Linux" ]]; then
+    if ! command -v ldconfig >/dev/null 2>&1 || ! ldconfig -p 2>/dev/null | grep -q "libportaudio"; then
+        printf 'Checking audio libraries for voice push-to-talk…\n'
+        if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev portaudio19-dev 2>/dev/null || true
+        elif command -v pacman >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo pacman -S --noconfirm portaudio alsa-lib 2>/dev/null || true
+        elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo dnf install -y portaudio-devel alsa-lib-devel 2>/dev/null || true
         fi
     fi
 fi
 
-# 4. Target Directory & Virtual Environment
-INSTALL_DIR="${HOME}/.maxi"
-VENV_DIR="${INSTALL_DIR}/venv"
-mkdir -p "${INSTALL_DIR}"
+# 4. Install backend wheel
+printf 'Installing the backend and voice dependencies…\n'
+if ! "$uv_bin" pip install --python "$venv/bin/python" --only-binary :all: --reinstall-package maxi-ai "${wheel}[voice]"; then
+    printf 'Voice extras failed to install. Installing core package…\n'
+    "$uv_bin" pip install --python "$venv/bin/python" --only-binary :all: --reinstall-package maxi-ai "${wheel}"
+fi
+"$venv/bin/python" -m app.cli --version
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-GIT_REPO_URL="https://github.com/krishnakanthpathi/maxi.git"
-SRC_DIR="${INSTALL_DIR}/src"
+# 5. Platform-specific Binary Installation (if condition)
+target_app=""
+if [[ "$OS" == "Darwin" ]]; then
+    # macOS Binary (Maxi.app)
+    if [[ -z "$app_source" && -n "$binary_source" ]]; then
+        app_source="$binary_source"
+    fi
+    if [[ -z "$app_source" ]]; then
+        printf 'Downloading the compiled app…\n'
+        fetch "$release_url/$archive_name" "$work_dir/$archive_name"
+        if [[ ! -f "$work_dir/SHA256SUMS" ]]; then
+            fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
+        fi
+        verify "$work_dir/$archive_name" "$work_dir/SHA256SUMS"
+        ditto -x -k "$work_dir/$archive_name" "$work_dir/unpacked"
+        app_source="$work_dir/unpacked/Maxi.app"
+    fi
+    [[ -d "$app_source/Contents/Resources" ]] || die 'The Maxi.app bundle is missing.'
+    app_source="$(cd "$app_source" && pwd -P)"
+    resources="$app_source/Contents/Resources"
 
-# If running via curl on a fresh system without local repo, clone from GitHub
-if [ ! -f "${REPO_ROOT}/pyproject.toml" ]; then
-    echo -e "🌐 Fetching latest Maxi source from GitHub..."
-    if [ -d "${SRC_DIR}/.git" ]; then
-        git -C "${SRC_DIR}" pull --quiet || true
+    target_app="$apps_dir/Maxi.app"
+    if [[ "$app_source" == '/Applications/Maxi.app' ]]; then target_app="$app_source"; fi
+    if [[ "$app_source" != "$target_app" ]]; then
+        [[ ! -L "$target_app" ]] || die "Refusing to replace a symlink at $target_app"
+        new_app="$apps_dir/.Maxi-install-$$.app"
+        ditto "$app_source" "$new_app"
+        "$venv/bin/python" - "$target_app" "$app_source" <<'PY'
+import os, signal, subprocess, sys, time
+from pathlib import Path
+executables = {
+    str(Path(app) / 'Contents/MacOS' / name)
+    for app in sys.argv[1:] for name in ('MaxiHUD', 'MaxiLauncher')
+}
+try:
+    processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
+except Exception:
+    processes = ""
+stopped = []
+for line in processes.splitlines():
+    fields = line.strip().split(None, 1)
+    if len(fields) != 2 or fields[1] not in executables:
+        continue
+    pid = int(fields[0])
+    try:
+        os.kill(pid, signal.SIGTERM)
+        stopped.append(pid)
+    except ProcessLookupError:
+        pass
+deadline = time.monotonic() + 3
+for pid in stopped:
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        if time.monotonic() >= deadline:
+            raise SystemExit('Please quit Maxi and run the installer again.')
+        time.sleep(0.05)
+PY
+        backup_app="$apps_dir/.Maxi-previous-$$.app"
+        if [[ -e "$target_app" ]]; then mv "$target_app" "$backup_app"; fi
+        if ! mv "$new_app" "$target_app"; then
+            [[ ! -e "$backup_app" ]] || mv "$backup_app" "$target_app"
+            die 'Could not install Maxi.app.'
+        fi
+        [[ ! -e "$backup_app" ]] || rm -rf "$backup_app"
+    fi
+    printf 'Installed macOS app: %s\n' "$target_app"
+
+elif [[ "$OS" == "Linux" ]]; then
+    # Linux Binary Installation (if condition)
+    if [[ -n "${binary_source:-}" && -f "$binary_source" ]]; then
+        printf 'Installing Linux binary from %s…\n' "$binary_source"
+        mkdir -p "$bin_dir"
+        install -m 755 "$binary_source" "$bin_dir/maxi-gui"
+        printf 'Installed Linux binary: %s/maxi-gui\n' "$bin_dir"
     else
-        git clone --quiet "${GIT_REPO_URL}" "${SRC_DIR}"
+        printf 'Linux environment: running in backend daemon mode (GUI companion placeholder ready).\n'
     fi
-    SOURCE_PATH="${SRC_DIR}"
-else
-    SOURCE_PATH="${REPO_ROOT}"
+
+    # Configure Linux systemd user service
+    service_path="${HOME}/.config/systemd/user/maxi.service"
+    mkdir -p "$(dirname "$service_path")"
+    cat <<EOF > "$service_path"
+[Unit]
+Description=Maxi Background AI Agent Daemon
+After=network.target sound.target
+
+[Service]
+ExecStart=${venv}/bin/maxi run
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+EOF
+    printf 'Configured Linux systemd service at %s\n' "$service_path"
 fi
 
-# Sync default configs from source
-if [ -f "${SOURCE_PATH}/.env" ] && [ ! -f "${INSTALL_DIR}/.env" ]; then
-    cp "${SOURCE_PATH}/.env" "${INSTALL_DIR}/.env"
-    echo -e "🔑 Synced environment keys to ${CYAN}${INSTALL_DIR}/.env${RESET}"
-elif [ -f "${SOURCE_PATH}/.env.example" ] && [ ! -f "${INSTALL_DIR}/.env" ]; then
-    cp "${SOURCE_PATH}/.env.example" "${INSTALL_DIR}/.env"
-    echo -e "🔑 Initialized default config at ${CYAN}${INSTALL_DIR}/.env${RESET}"
-fi
+# 6. Setup Configuration
+fresh_config=0
+if [[ ! -f "$install_dir/.env" ]]; then
+    if [[ "$OS" == "Darwin" && -f "${resources:-}/default.env" ]]; then
+        cp "$resources/default.env" "$install_dir/.env"
+    else
+        cat <<'EOF' > "$install_dir/.env"
+# ∑ Maxi — copy to ~/.maxi/.env and configure your providers.
+HOST=127.0.0.1
+PORT=4848
+DEBUG=false
 
-# Copy only generic defaults, without overwriting private user configuration.
-if [ ! -f "${INSTALL_DIR}/mcp_config.json" ] && [ -f "${SOURCE_PATH}/.maxi/mcp_config.example.json" ]; then
-    cp "${SOURCE_PATH}/.maxi/mcp_config.example.json" "${INSTALL_DIR}/mcp_config.json"
-fi
-if [ -d "${SOURCE_PATH}/.maxi/skills" ]; then
-    mkdir -p "${INSTALL_DIR}/skills"
-    for skill in "${SOURCE_PATH}/.maxi/skills/"*.md; do
-        [ -f "$skill" ] || continue
-        [ -f "${INSTALL_DIR}/skills/$(basename "$skill")" ] || cp "$skill" "${INSTALL_DIR}/skills/"
-    done
-fi
+# Start a compatible server and install this model before using Maxi.
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama
+OPENAI_MODEL=gemma2:31b-cloud
 
-echo -e "📦 Setting up isolated environment at ${CYAN}${VENV_DIR}${RESET}..."
-if command -v uv >/dev/null 2>&1; then
-    echo -e "⚡ Using uv for high-speed package management..."
-    uv venv --allow-existing --python "$PYTHON_BIN" "${VENV_DIR}"
-    echo -e "🔧 Installing Maxi package..."
-    if ! uv pip install -e "${SOURCE_PATH}${INSTALL_EXTRAS}" --python "${VENV_DIR}"; then
-        echo -e "${YELLOW}⚠️ Voice extras failed to install. Installing core chat package...${RESET}"
-        uv pip install -e "${SOURCE_PATH}" --python "${VENV_DIR}"
+# Whisper-compatible speech transcription. Set a real provider key for voice.
+VOICE_BASE_URL=https://api.groq.com/openai/v1
+VOICE_API_KEY=
+VOICE_MODEL=whisper-large-v3-turbo
+ENABLE_VOICE_HOTKEY=true
+VOICE_HOTKEY=auto
+
+# Speech synthesis
+ENABLE_TTS=true
+TTS_PROVIDER=siri
+TTS_VOICE=Tara
+TTS_BASE_URL=http://127.0.0.1:8880/v1
+AGENT_TIMEOUT_SECONDS=90
+EOF
     fi
-else
-    "$PYTHON_BIN" -m venv "${VENV_DIR}"
-    VENV_PIP="${VENV_DIR}/bin/pip"
-    "${VENV_PIP}" install --upgrade --quiet pip setuptools wheel
-    echo -e "🔧 Installing Maxi package..."
-    if ! "${VENV_PIP}" install -e "${SOURCE_PATH}${INSTALL_EXTRAS}"; then
-        echo -e "${YELLOW}⚠️ Voice extras failed to install. Installing core chat package...${RESET}"
-        "${VENV_PIP}" install -e "${SOURCE_PATH}"
-    fi
+    chmod 600 "$install_dir/.env"
+    fresh_config=1
 fi
 
-VENV_MAXI="${VENV_DIR}/bin/maxi"
-
-# 6. Global Symlink
-BIN_DIR="${HOME}/.local/bin"
-mkdir -p "${BIN_DIR}"
-ln -sf "${VENV_MAXI}" "${BIN_DIR}/maxi"
-echo -e "🔗 Linked CLI to ${GREEN}${BIN_DIR}/maxi${RESET}"
-
-# Also attempt system-wide link if writable or passwordless sudo
-if [ -w "/usr/local/bin" ]; then
-    ln -sf "${VENV_MAXI}" "/usr/local/bin/maxi" 2>/dev/null || true
-elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    sudo ln -sf "${VENV_MAXI}" /usr/local/bin/maxi 2>/dev/null || true
+if [[ ! -f "$install_dir/mcp_config.json" ]]; then
+    printf '{"mcpServers":{}}\n' > "$install_dir/mcp_config.json"
 fi
+
+# 7. Symlink CLI
+ln -sfn "$venv/bin/maxi" "$bin_dir/maxi"
 
 # Ensure ~/.local/bin is permanently in shell config
 for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
@@ -170,87 +299,38 @@ for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
     fi
 done
 
-# 7. System Background Service Setup
-if [ "$OS" = "Darwin" ]; then
-    # macOS launchd plist
-    PLIST_PATH="${HOME}/Library/LaunchAgents/com.maxi.daemon.plist"
-    mkdir -p "$(dirname "$PLIST_PATH")"
-    cat <<EOF > "$PLIST_PATH"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.maxi.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${VENV_MAXI}</string>
-        <string>run</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>${INSTALL_DIR}</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>${HOME}</string>
-        <key>PATH</key>
-        <string>${HOME}/.local/bin:${HOME}/.lightmem/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${INSTALL_DIR}/daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>${INSTALL_DIR}/daemon.log</string>
-</dict>
-</plist>
-EOF
-    echo -e "🚀 Configured macOS LaunchAgent at ${CYAN}${PLIST_PATH}${RESET}"
-    echo -e "   To enable at boot: ${CYAN}launchctl load -w ${PLIST_PATH}${RESET}"
+printf '\nCLI: %s\n' "$bin_dir/maxi"
+printf 'Existing configuration, chats, and saved memories were preserved.\n'
 
-elif [ "$OS" = "Linux" ]; then
-    # Linux systemd user service
-    SERVICE_PATH="${HOME}/.config/systemd/user/maxi.service"
-    mkdir -p "$(dirname "$SERVICE_PATH")"
-    cat <<EOF > "$SERVICE_PATH"
-[Unit]
-Description=Maxi Background AI Agent Daemon
-After=network.target sound.target
-
-[Service]
-ExecStart=${VENV_MAXI} run
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-EOF
-    echo -e "🚀 Configured Linux systemd service at ${CYAN}${SERVICE_PATH}${RESET}"
-    echo -e "   To enable at boot: ${CYAN}systemctl --user enable --now maxi${RESET}"
+# 8. Interactive Configuration Wizard
+if [[ "$configure" -eq 1 && "$fresh_config" -eq 1 ]]; then
+    if ( : < /dev/tty ) 2>/dev/null; then
+        printf '\nConfigure your model and voice provider:\n'
+        "$venv/bin/python" -m app.cli config wizard < /dev/tty
+    else
+        printf '\nRun this in a terminal to configure your providers:\n  %q config wizard\n' "$bin_dir/maxi"
+        launch=0
+    fi
 fi
 
-echo ""
-echo -e "${GREEN}${BOLD}🎉 Maxi successfully installed!${RESET}"
-echo ""
-echo -e "Commands:"
-echo -e "  • Start daemon:   ${CYAN}maxi start${RESET}"
-echo -e "  • Open macOS HUD:   ${CYAN}maxi hud${RESET}"
-echo -e "  • Check status:   ${CYAN}maxi status${RESET}"
-echo -e "  • Stop daemon:    ${CYAN}maxi stop${RESET}"
-echo ""
-if ! command -v maxi >/dev/null 2>&1; then
-    echo -e "${YELLOW}👉 To use 'maxi' in this active terminal, run:${RESET}"
-    echo -e "   ${CYAN}export PATH=\"\$HOME/.local/bin:\$PATH\"${RESET}"
-    echo -e "   (Or invoke directly: ${CYAN}${VENV_MAXI}${RESET})"
-    echo ""
+# 9. Launch Daemon
+if [[ "$launch" -eq 1 ]]; then
+    printf '\nStarting the Python backend…\n'
+    backend_action=start
+    if [[ -f "$install_dir/daemon.pid" ]]; then backend_action=restart; fi
+    (cd "$install_dir" && "$venv/bin/python" -m app.cli "$backend_action")
+    if [[ "$OS" == "Darwin" && "$open_hud" -eq 1 && -n "$target_app" && -d "$target_app" ]]; then
+        printf '\nOpening the Maxi HUD…\n'
+        open "$target_app"
+    fi
 fi
-echo -e "Hotkey:"
-if [ "$OS" = "Darwin" ]; then
-    echo -e "  • Hold ${BOLD}Right Option${RESET} to speak."
+
+if [[ "$OS" == "Darwin" ]]; then
+    printf '\nIf macOS blocks this unsigned beta, review Maxi in Privacy & Security.\n'
+    printf 'Allow Microphone and Accessibility/Input Monitoring when requested.\n'
+    printf 'Hotkey: Hold Right Option to speak.\n'
 else
-    echo -e "  • Hold ${BOLD}Control + Space${RESET} to speak."
+    printf '\nHotkey: Hold Control + Space to speak.\n'
+    printf 'To enable at boot: systemctl --user enable --now maxi\n'
 fi
-echo -e "  • No mic? Use the local REST API directly!"
-echo ""
+printf 'Start the configured model server before sending a request.\n'

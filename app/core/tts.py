@@ -234,28 +234,55 @@ _OPENING_APPRAISAL_RE = re.compile(
 )
 
 
+OLLAMA_VOICE_ALIASES: Dict[str, str] = {
+    "phonon": "phonon",
+    "hugh": "Hugh",
+    "ollama": "phonon",
+}
+
+
+def is_ollama_voice(voice: Optional[str]) -> bool:
+    """Returns True if the given voice name or active provider targets Ollama speech (e.g. phonon)."""
+    if voice:
+        v = voice.strip().lower()
+        if v in SIRI_VOICE_ALIASES or v in SIRI_VOICE_PRESETS:
+            return False
+        if v in KOKORO_VOICE_ALIASES or v in KOKORO_VOICE_PRESETS or KOKORO_VOICE_PREFIX_RE.match(v):
+            return False
+        if v in ("phonon", "ollama", "hugh") or v in OLLAMA_VOICE_ALIASES:
+            return True
+    provider = getattr(settings, "tts_provider", "").lower().strip()
+    return provider in ("ollama", "phonon")
+
+
 def is_kokoro_voice(voice: Optional[str]) -> bool:
     """Returns True if the given voice name or alias targets Kokoro Neural TTS."""
-    if not voice:
-        return getattr(settings, "tts_provider", "kokoro").lower() == "kokoro"
-    v = voice.strip().lower()
-    if v in SIRI_VOICE_ALIASES or v in SIRI_VOICE_PRESETS:
-        return False
-    if v in KOKORO_VOICE_ALIASES or v in KOKORO_VOICE_PRESETS:
-        return True
-    if KOKORO_VOICE_PREFIX_RE.match(v):
-        return True
-    return False
+    if voice:
+        v = voice.strip().lower()
+        if v in SIRI_VOICE_ALIASES or v in SIRI_VOICE_PRESETS:
+            return False
+        if v in ("phonon", "ollama", "hugh") or v in OLLAMA_VOICE_ALIASES:
+            return False
+        if v in KOKORO_VOICE_ALIASES or v in KOKORO_VOICE_PRESETS or KOKORO_VOICE_PREFIX_RE.match(v):
+            return True
+    provider = getattr(settings, "tts_provider", "kokoro").lower().strip()
+    return provider == "kokoro"
 
 
 def resolve_siri_voice(requested_voice: Optional[str] = None) -> str:
     """Resolves a voice alias or name (e.g. 'siri', 'tara', 'kokoro', 'heart') to its canonical voice ID."""
-    raw = (requested_voice or getattr(settings, "tts_voice", "af_heart") or "af_heart").strip()
+    if is_ollama_voice(requested_voice):
+        default_voice = "Hugh"
+    else:
+        default_voice = "af_heart"
+    raw = (requested_voice or getattr(settings, "tts_voice", default_voice) or default_voice).strip()
     lookup = raw.lower()
     if lookup in SIRI_VOICE_ALIASES:
         return SIRI_VOICE_ALIASES[lookup]
     if lookup in KOKORO_VOICE_ALIASES:
         return KOKORO_VOICE_ALIASES[lookup]
+    if lookup in OLLAMA_VOICE_ALIASES:
+        return OLLAMA_VOICE_ALIASES[lookup]
     return raw
 
 
@@ -376,9 +403,13 @@ def clean_text_for_tts(text: str, max_chars: int = 240, preserve_annotations: bo
     return s
 
 
-# Inline child worker script for Kokoro-FastAPI neural audio playback via native afplay
+# Inline child worker script for Kokoro-FastAPI neural audio playback via native afplay with live levels
 _KOKORO_STREAM_PLAYER_SCRIPT = r"""
-import sys, json, urllib.request, os
+import sys, json, urllib.request, os, subprocess, time, wave
+try:
+    import numpy as np
+except Exception:
+    np = None
 
 url, voice, speed, text = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
 endpoint = url.rstrip("/") + "/audio/speech"
@@ -402,17 +433,193 @@ try:
     tmp_path = f"/tmp/maxi_kokoro_{os.getpid()}.wav"
     with open(tmp_path, "wb") as f:
         f.write(data)
-    if sys.platform == "darwin":
-        os.execvp("afplay", ["afplay", tmp_path])
-    elif sys.platform.startswith("win"):
-        import subprocess
-        ps = f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync(); Remove-Item '{tmp_path}'"
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps])
-        sys.exit(0)
-    else:
-        os.execvp("aplay", ["aplay", tmp_path])
+
+    pcm = None
+    sr = 24000
+    try:
+        with wave.open(tmp_path, "rb") as wf:
+            sr = wf.getframerate()
+            n_ch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            raw_frames = wf.readframes(wf.getnframes())
+        if np is not None:
+            if sw == 2:
+                pcm = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32) / 32768.0
+            else:
+                pcm = np.frombuffer(raw_frames, dtype=np.float32)
+            if n_ch > 1:
+                pcm = pcm[::n_ch]
+    except Exception:
+        pcm = None
+
+    sys.stdout.write("PLAYING\n")
+    sys.stdout.flush()
+
+    player = None
+    try:
+        if sys.platform == "darwin":
+            player = subprocess.Popen(["afplay", tmp_path])
+        elif sys.platform.startswith("win"):
+            ps = f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync()"
+            player = subprocess.Popen(["powershell", "-NoProfile", "-Command", ps])
+        else:
+            player = subprocess.Popen(["aplay", tmp_path])
+
+        start_time = time.time()
+        chunk_dur = 0.03
+        chunk_samples = int(sr * chunk_dur)
+        band_freqs = [(70.0, 250.0), (250.0, 650.0), (650.0, 1600.0), (1600.0, 3500.0), (3500.0, 7000.0)]
+
+        while player.poll() is None:
+            if pcm is not None and np is not None:
+                t_now = time.time() - start_time
+                idx = int(t_now * sr)
+                if idx < len(pcm):
+                    chunk = pcm[idx : idx + chunk_samples]
+                    if len(chunk) > 0:
+                        rms = float(np.sqrt(np.mean(np.square(chunk))))
+                        if rms < 0.003:
+                            levels = [0.1, 0.1, 0.1, 0.1, 0.1]
+                        else:
+                            n_s = len(chunk)
+                            w = np.hanning(n_s).astype(np.float32)
+                            fft = np.abs(np.fft.rfft(chunk * w))
+                            n_b = len(fft)
+                            freq_bin = (sr / 2.0) / max(1, n_b - 1)
+                            levels = []
+                            overall = min(1.0, max(0.12, (rms * 7.0) ** 0.65))
+                            for lo, hi in band_freqs:
+                                blo = max(0, int(lo / freq_bin))
+                                bhi = min(n_b, max(blo + 1, int(hi / freq_bin)))
+                                sub = fft[blo:bhi]
+                                mag = float(np.mean(sub)) if len(sub) > 0 else 0.0
+                                norm = min(1.0, max(0.10, (mag * 12.0) ** 0.65))
+                                blended = 0.55 * norm + 0.45 * overall
+                                levels.append(round(float(min(1.0, max(0.10, blended))), 3))
+                        sys.stdout.write("L " + " ".join(str(x) for x in levels) + "\n")
+                        sys.stdout.flush()
+            time.sleep(chunk_dur)
+    finally:
+        if player is not None and player.poll() is None:
+            try:
+                player.kill()
+            except Exception:
+                pass
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
 except Exception as e:
     sys.stderr.write(f"Kokoro player error: {e}\n")
+    sys.exit(2)
+"""
+
+# Inline child worker script for Ollama speech (e.g. phonon) neural audio playback via native afplay with live levels
+_OLLAMA_STREAM_PLAYER_SCRIPT = r"""
+import sys, json, urllib.request, os, subprocess, time, wave
+try:
+    import numpy as np
+except Exception:
+    np = None
+
+url, model, voice, text = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+endpoint = url.rstrip("/") + "/audio/speech"
+body = {"model": model, "input": text}
+if voice and voice.lower() not in ("none", "default", "phonon", "ollama", ""):
+    body["voice"] = voice
+payload = json.dumps(body).encode("utf-8")
+
+req = urllib.request.Request(
+    endpoint,
+    data=payload,
+    headers={"Content-Type": "application/json"},
+)
+try:
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = resp.read()
+    tmp_path = f"/tmp/maxi_ollama_{os.getpid()}.wav"
+    with open(tmp_path, "wb") as f:
+        f.write(data)
+
+    pcm = None
+    sr = 24000
+    try:
+        with wave.open(tmp_path, "rb") as wf:
+            sr = wf.getframerate()
+            n_ch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            raw_frames = wf.readframes(wf.getnframes())
+        if np is not None:
+            if sw == 2:
+                pcm = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32) / 32768.0
+            else:
+                pcm = np.frombuffer(raw_frames, dtype=np.float32)
+            if n_ch > 1:
+                pcm = pcm[::n_ch]
+    except Exception:
+        pcm = None
+
+    sys.stdout.write("PLAYING\n")
+    sys.stdout.flush()
+
+    player = None
+    try:
+        if sys.platform == "darwin":
+            player = subprocess.Popen(["afplay", tmp_path])
+        elif sys.platform.startswith("win"):
+            ps = f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync()"
+            player = subprocess.Popen(["powershell", "-NoProfile", "-Command", ps])
+        else:
+            player = subprocess.Popen(["aplay", tmp_path])
+
+        start_time = time.time()
+        chunk_dur = 0.03
+        chunk_samples = int(sr * chunk_dur)
+        band_freqs = [(70.0, 250.0), (250.0, 650.0), (650.0, 1600.0), (1600.0, 3500.0), (3500.0, 7000.0)]
+
+        while player.poll() is None:
+            if pcm is not None and np is not None:
+                t_now = time.time() - start_time
+                idx = int(t_now * sr)
+                if idx < len(pcm):
+                    chunk = pcm[idx : idx + chunk_samples]
+                    if len(chunk) > 0:
+                        rms = float(np.sqrt(np.mean(np.square(chunk))))
+                        if rms < 0.003:
+                            levels = [0.1, 0.1, 0.1, 0.1, 0.1]
+                        else:
+                            n_s = len(chunk)
+                            w = np.hanning(n_s).astype(np.float32)
+                            fft = np.abs(np.fft.rfft(chunk * w))
+                            n_b = len(fft)
+                            freq_bin = (sr / 2.0) / max(1, n_b - 1)
+                            levels = []
+                            overall = min(1.0, max(0.12, (rms * 7.0) ** 0.65))
+                            for lo, hi in band_freqs:
+                                blo = max(0, int(lo / freq_bin))
+                                bhi = min(n_b, max(blo + 1, int(hi / freq_bin)))
+                                sub = fft[blo:bhi]
+                                mag = float(np.mean(sub)) if len(sub) > 0 else 0.0
+                                norm = min(1.0, max(0.10, (mag * 12.0) ** 0.65))
+                                blended = 0.55 * norm + 0.45 * overall
+                                levels.append(round(float(min(1.0, max(0.10, blended))), 3))
+                        sys.stdout.write("L " + " ".join(str(x) for x in levels) + "\n")
+                        sys.stdout.flush()
+            time.sleep(chunk_dur)
+    finally:
+        if player is not None and player.poll() is None:
+            try:
+                player.kill()
+            except Exception:
+                pass
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+except Exception as e:
+    sys.stderr.write(f"Ollama speech error: {e}\n")
     sys.exit(2)
 """
 
@@ -512,7 +719,8 @@ class TTSService:
         return clean_text
 
     def _run_speech_sync(self, clean_text: str, voice: str, rate: int):
-        use_kokoro = is_kokoro_voice(voice)
+        use_ollama = is_ollama_voice(voice)
+        use_kokoro = is_kokoro_voice(voice) and not use_ollama
         synthesized_text = (
             translate_expressive_annotations(clean_text, for_kokoro=True)
             if use_kokoro
@@ -524,7 +732,9 @@ class TTSService:
             logger.warning("No TTS backend available on this system.")
             return
 
-        if use_kokoro:
+        if use_ollama:
+            logger.info(f"🔊 Ollama Phonon TTS ({voice}): \"{synthesized_text}\"")
+        elif use_kokoro:
             speed = round(max(0.5, min(2.5, rate / 190.0)), 2)
             logger.info(f"🔊 Kokoro Neural TTS ({voice} @ {speed}x): \"{synthesized_text}\"")
         else:
@@ -534,12 +744,13 @@ class TTSService:
             # Give CoreAudio a brief 60ms breath to release device buffers if a feedback chime just completed
             time.sleep(0.06)
 
+        is_stream_worker = bool(use_kokoro or use_ollama)
         with self._lock:
             self._is_speaking = True
             try:
                 self._proc = subprocess.Popen(
                     cmd,
-                    stdout=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE if is_stream_worker else subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
                 proc = self._proc
@@ -549,13 +760,45 @@ class TTSService:
                 self._proc = None
                 return
 
-        if self._broadcast_cb:
+        start_broadcasted = False
+        if is_stream_worker and proc.stdout:
+            try:
+                while self._is_speaking and proc.poll() is None:
+                    raw_line = proc.stdout.readline()
+                    if not raw_line:
+                        break
+                    line_str = (raw_line if isinstance(raw_line, str) else raw_line.decode("utf-8", errors="ignore")).strip()
+                    if line_str == "PLAYING":
+                        if not start_broadcasted and self._broadcast_cb:
+                            self._broadcast_cb({
+                                "event": "tts_start",
+                                "text": clean_text,
+                                "voice": voice,
+                            })
+                            start_broadcasted = True
+                    elif line_str.startswith("L "):
+                        parts = line_str[2:].strip().split()
+                        if len(parts) == 5 and self._broadcast_cb and self._is_speaking:
+                            try:
+                                levels = [float(p) for p in parts]
+                                self._broadcast_cb({
+                                    "event": "audio_level",
+                                    "levels": levels,
+                                    "speaking": True,
+                                })
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        if not start_broadcasted and self._broadcast_cb:
             try:
                 self._broadcast_cb({
                     "event": "tts_start",
                     "text": clean_text,
                     "voice": voice,
                 })
+                start_broadcasted = True
             except Exception:
                 pass
 
@@ -572,7 +815,7 @@ class TTSService:
                 )
                 fallback_cmd = (
                     ["say", "-v", "Tara", "-r", str(rate), siri_fallback_text]
-                    if use_kokoro
+                    if (use_kokoro or use_ollama)
                     else ["say", "-r", str(rate), siri_fallback_text]
                 )
                 with self._lock:
@@ -583,6 +826,15 @@ class TTSService:
                             stderr=subprocess.DEVNULL,
                         )
                         proc = self._proc
+                if not start_broadcasted and self._broadcast_cb:
+                    try:
+                        self._broadcast_cb({
+                            "event": "tts_start",
+                            "text": clean_text,
+                            "voice": "Tara",
+                        })
+                    except Exception:
+                        pass
                 proc.wait()
         except Exception as e:
             logger.debug(f"TTS process interrupted: {e}")
@@ -600,6 +852,21 @@ class TTSService:
                     pass
 
     def _build_tts_command(self, text: str, voice: str, rate: int) -> Optional[List[str]]:
+        if is_ollama_voice(voice):
+            base_url = getattr(settings, "tts_base_url", None)
+            if not base_url or "8880" in base_url:
+                base_url = (getattr(settings, "openai_base_url", None) or "http://localhost:11434/v1").rstrip("/")
+            model = getattr(settings, "tts_model", "phonon") or "phonon"
+            return [
+                sys.executable,
+                "-c",
+                _OLLAMA_STREAM_PLAYER_SCRIPT,
+                base_url,
+                model,
+                voice,
+                text,
+            ]
+
         if is_kokoro_voice(voice):
             base_url = getattr(settings, "tts_base_url", "http://127.0.0.1:8880/v1")
             speed = round(max(0.5, min(2.5, rate / 190.0)), 2)

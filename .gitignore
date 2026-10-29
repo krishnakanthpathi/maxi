@@ -50,6 +50,7 @@ frontends/macos/dist/
 data/
 qr.png
 .maxi/*.pid
+.maxi/daemon.lock
 .maxi/*.db*
 
 # Hosted landing page has an independent source repository.
@@ -61,3 +62,6 @@ sites/
 
 # Vercel's local project link.
 .vercel/
+
+# Generated, verified website release downloads.
+website/downloads/

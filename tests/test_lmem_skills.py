@@ -19,6 +19,7 @@ class TestLmemTools(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.stdout = "Stefan's favorite theme song: https://youtube.com/..."
         mock_proc.stderr = ""
+        mock_proc.returncode = 0
         mock_run.return_value = mock_proc
 
         result = lmem_recall.invoke({"query": "favorite song"})
@@ -34,26 +35,28 @@ class TestLmemTools(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.stdout = "Your favorite song is theme song"
         mock_proc.stderr = ""
+        mock_proc.returncode = 0
         mock_run.return_value = mock_proc
 
         result = lmem_answer.invoke({"question": "what is my favorite song?"})
         self.assertEqual(result, "Your favorite song is theme song")
         args, kwargs = mock_run.call_args
         cmd = args[0]
-        self.assertEqual(cmd[1:], ["answer", "what is my favorite song?"])
+        self.assertEqual(cmd[1:], ["answer", "what is my favorite song?", "--global"])
 
     @patch("subprocess.run")
     def test_lmem_remember_invokes_cli_remember(self, mock_run):
         mock_proc = MagicMock()
         mock_proc.stdout = "Memory saved successfully [id: mem_123]"
         mock_proc.stderr = ""
+        mock_proc.returncode = 0
         mock_run.return_value = mock_proc
 
         result = lmem_remember.invoke({"content": "Prefers dark mode on all IDEs"})
         self.assertIn("saved successfully", result)
         args, kwargs = mock_run.call_args
         cmd = args[0]
-        self.assertEqual(cmd[1:], ["remember", "Prefers dark mode on all IDEs"])
+        self.assertEqual(cmd[1:], ["remember", "Prefers dark mode on all IDEs", "--global"])
 
 
 class TestSkillRegistryMemoryTriggers(unittest.TestCase):

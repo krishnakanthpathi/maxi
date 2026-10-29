@@ -4,7 +4,7 @@ For v0.3.0-beta.1, Python uses PEP 440 version `0.3.0b1`, while the Git tag and 
 
 Before publication:
 
-1. Run `python -m pytest -q` and `bash scripts/test_macos_hud.sh` on macOS.
+1. Run `python -m pytest -q`, `bash scripts/test_macos_hud.sh`, and `bash scripts/test_macos_markdown.sh` on macOS.
 2. Run `uv build` to create the wheel and source distribution.
 3. Run `bash scripts/package_macos.sh` to build the native companion for the host architecture.
 4. Run `python3 scripts/verify_release.py` to check required source/assets, exclude private runtime files, and write `dist/SHA256SUMS`.
@@ -17,7 +17,7 @@ The app is a companion to the Python daemon and is not Developer ID signed or no
 
 Run `bash scripts/package_macos_installer.sh` after building the wheel. This
 builds a universal Swift HUD with backend bootstrap, generates the ∑ ICNS asset,
-and packages a ZIP and DMG. The app bundles the wheel and online setup script;
+and packages a ZIP and DMG. The app bundles the online setup script; the wheel is a separate release artifact.
 Python is installed on first setup when needed, rather than included offline.
 Both the app and mounted disk must have the icon. The app is ad-hoc signed for
 bundle integrity, not Developer ID signed or notarized.
@@ -29,9 +29,9 @@ include all new assets in `SHA256SUMS`. Upload these additional artifacts:
 - `Maxi-0.3.0-beta.1-macos-universal.zip`
 - `install-macos.sh`
 
-When adding installer packaging to the existing beta, preserve the original
-wheel, sdist, and companion ZIP. Replace only the checksum manifest and release
-description, and add the new installer files. Publish the installer assets
+Rebuild and publish the backend wheel, sdist, and native apps from the same
+source revision. Verify that the wheel contains no Swift source and the app
+contains no wheel. Publish all matching artifacts with their checksum manifest. Publish the installer assets
 before pushing website links that depend on them.
 
 Verify a clean install with `--no-configure --no-launch` and isolated
@@ -53,3 +53,7 @@ gh release create v0.3.0-beta.1 --prerelease \
   dist/MaxiHUD-0.3.0-beta.1-macos-arm64.zip \
   dist/SHA256SUMS
 ```
+
+The installer installs the verified wheel before the native app. Run the wheel
+integration test (`python -m pytest -q tests/test_wheel_install.py`) to verify
+installation outside the checkout, backend readiness, HTTP/WS APIs, and restart.

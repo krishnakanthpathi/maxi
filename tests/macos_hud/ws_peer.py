@@ -12,6 +12,8 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
     connections = 0
+    requests = 0
+    mutations = 0
     lock = threading.Lock()
 
 
@@ -29,7 +31,16 @@ class Peer(socketserver.StreamRequestHandler):
             key, value = line.split(':', 1)
             headers[key.lower()] = value.strip()
         if request[1] != '/ws':
-            data = json.dumps({'connections': self.server.connections}).encode()
+            if request[1] != '/stats':
+                with self.server.lock:
+                    self.server.requests += 1
+                    self.server.mutations += request[0] == 'POST'
+            payload = {'connections': self.server.connections, 'requests': self.server.requests, 'mutations': self.server.mutations}
+            if request[1] == '/api/config':
+                payload = {'status': 'error' if sys.argv[1] == 'reject-api' else 'updated', 'config': {'llm_model': 'peer-model'}}
+            if request[1] == '/api/tts':
+                payload = {'active': {'enable_tts': False}}
+            data = json.dumps(payload).encode()
             self.wfile.write(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: ' + str(len(data)).encode() + b'\r\n\r\n' + data)
             return
         with self.server.lock:

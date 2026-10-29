@@ -1,6 +1,7 @@
 """Verify sanitized beta distributions and write the release checksums."""
 from pathlib import Path
 import hashlib
+import os
 import plistlib
 import tarfile
 import zipfile
@@ -18,7 +19,7 @@ INSTALLER_SH = DIST / 'install-macos.sh'
 def safe(names):
     for name in names:
         path = Path(name)
-        forbidden = {'.env', 'mcp_config.json', 'history.jsonl', 'qr.png', '.git', '.build', '__pycache__'}
+        forbidden = {'.env', 'mcp_config.json', 'history.jsonl', 'qr.png', '.git', '.build', '__pycache__', 'daemon.lock'}
         assert not forbidden.intersection(path.parts), f'Private/runtime path in release: {name}'
         assert not name.endswith(('.sqlite3', '.db', '.pid', '.log', '.pyc')), name
 
@@ -26,9 +27,7 @@ def safe(names):
 with zipfile.ZipFile(WHEEL) as archive:
     names = archive.namelist()
     safe(names)
-    assert 'frontends/macos/Package.swift' in names
-    assert 'frontends/macos/Sources/MaxiHUD/HUDView.swift' in names
-    assert 'frontends/macos/Sources/MaxiHUD/GlassStyle.swift' in names
+    assert not any(n.startswith('frontends/') or n.endswith('.swift') for n in names), 'Backend wheel must not contain the native frontend'
     assert 'app/sounds/minimal_wake.mp3' in names
     metadata = next(n for n in names if n.endswith('.dist-info/METADATA'))
     assert '\nVersion: 0.3.0b1\n' in archive.read(metadata).decode()
@@ -42,6 +41,7 @@ with zipfile.ZipFile(MAC) as archive:
     safe(names)
     assert 'Maxi.app/Contents/MacOS/MaxiHUD' in names
     assert 'Maxi.app/Contents/Info.plist' in names
+    assert not any(n.endswith('.whl') for n in names), 'The macOS companion must not embed the Python wheel'
     assert 'INSTALL.md' in names
 artifacts = [WHEEL, SDIST, MAC]
 if any(path.exists() for path in [INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH]):
@@ -58,11 +58,19 @@ if any(path.exists() for path in [INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH]):
         assert base + 'MacOS/MaxiLauncher' not in names
         assert base + 'Resources/Install Maxi.command' in names
         assert archive.read(base + 'Resources/install_macos.sh') == INSTALLER_SH.read_bytes()
-        assert archive.read(base + 'Resources/' + WHEEL.name) == WHEEL.read_bytes()
+        assert not any(n.endswith('.whl') for n in names), 'The app and backend must ship separately'
         assert archive.read(base + 'Resources/default.env') == (ROOT / '.env.example').read_bytes()
+        for resource in (ROOT / 'frontends/macos/Sources/MaxiHUD/Resources/Renderer').iterdir():
+            assert archive.read(base + 'Resources/Renderer/' + resource.name) == resource.read_bytes(), f'Missing or stale response renderer: {resource.name}'
     artifacts.extend([INSTALLER_ZIP, INSTALLER_DMG, INSTALLER_SH])
-    assert INSTALLER_SH.read_bytes() == (ROOT / 'scripts/install_macos.sh').read_bytes()
-    print('PASS: combined app includes native startup, backend wheel, setup script, and icon')
+    expected_installer = (ROOT / 'scripts/install_macos.sh').read_text()
+    if release_url := os.environ.get('MAXI_RELEASE_URL'):
+        expected_installer = '\n'.join(
+            f'release_url="{release_url.rstrip("/")}"' if line.startswith('release_url=') else line
+            for line in expected_installer.splitlines()
+        ) + '\n'
+    assert INSTALLER_SH.read_text() == expected_installer
+    print('PASS: native app includes backend startup, online setup script, and icon; wheel ships separately')
 lines = [f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}' for path in artifacts]
 (DIST / 'SHA256SUMS').write_text('\n'.join(lines) + '\n')
 print('PASS: wheel, source archive, and macOS companion are sanitized and complete')

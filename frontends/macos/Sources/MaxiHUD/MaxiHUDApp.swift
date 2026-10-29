@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     private var panel: BarPanel?
     private var statusItem: NSStatusItem?
 
@@ -26,10 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.syncPanelVisibility()
         }
 
+        setupMainMenu()
         setupStatusBarMenu()
         AppState.shared.revealHUD()
-        BackendBootstrap.startIfBundled()
-        WebSocketClient.shared.start()
+        BackendBootstrap.start { WebSocketClient.shared.start() }
 
         // Global and local Escape monitoring to immediately cancel active voice command, STT, LLM, or toast
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -86,17 +86,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         AppState.shared.revealHUD()
+        if panel != nil && !AppState.shared.wsConnected {
+            BackendBootstrap.start { WebSocketClient.shared.start() }
+        }
         return true
     }
 
     private func syncPanelVisibility() {
         guard let panel = self.panel else { return }
-        if AppState.shared.isHUDVisible {
+        if AppState.shared.isPanelVisible {
             panel.updatePosition()
             panel.orderFrontRegardless()
         } else {
             panel.orderOut(nil)
         }
+    }
+
+    private func setupMainMenu() {
+        guard NSApp.mainMenu == nil else { return }
+        let mainMenu = NSMenu()
+
+        // App Menu
+        let appMenuItem = NSMenuItem(title: "Maxi", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "Maxi")
+        appMenu.addItem(withTitle: "About Maxi", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "Quit Maxi", action: #selector(quitApp), keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // Edit Menu (Enables standard Cmd+C, Cmd+V, Cmd+A, Cmd+X shortcuts across the app)
+        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     private func setupStatusBarMenu() {
@@ -142,6 +174,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openMCPItem.target = self
         toolsMenu.addItem(openMCPItem)
 
+        let openEnvItem = NSMenuItem(title: "📝 Edit Environment Config (~/.maxi/.env)", action: #selector(openEnvConfig), keyEquivalent: "")
+        openEnvItem.target = self
+        toolsMenu.addItem(openEnvItem)
+
         let reloadToolsItem = NSMenuItem(title: "🔄 Reload Skills & MCP Servers", action: #selector(reloadSkillsAndMCP), keyEquivalent: "r")
         reloadToolsItem.target = self
         toolsMenu.addItem(reloadToolsItem)
@@ -164,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Auto-hide toggle option (pin without closing)
         let autoHideItem = NSMenuItem(
-            title: "Auto-Hide Results (Auto-Dismiss)",
+            title: "Auto-hide Responses",
             action: #selector(toggleAutoHide),
             keyEquivalent: "h"
         )
@@ -181,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(bottomItem)
         self.bottomDockMenuItem = bottomItem
 
-        let topItem = NSMenuItem(title: "Position: Top Notch", action: #selector(setTopNotch), keyEquivalent: "")
+        let topItem = NSMenuItem(title: "Position: Below Notch", action: #selector(setTopNotch), keyEquivalent: "")
         topItem.target = self
         topItem.state = AppState.shared.positionMode == .topNotch ? .on : .off
         menu.addItem(topItem)
@@ -192,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         idleItem.state = AppState.shared.alwaysShowIdlePill ? .on : .off
         menu.addItem(idleItem)
         self.toggleIdleItem = idleItem
+
 
         // Start a fresh conversation without deleting saved memories.
         let clearItem = NSMenuItem(
@@ -205,6 +242,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let showLastItem = NSMenuItem(title: "Show Last Transcript Toast", action: #selector(showLastToast), keyEquivalent: "")
         showLastItem.target = self
         menu.addItem(showLastItem)
+
+        let openEnvMainItem = NSMenuItem(title: "📝 Edit .env Config (~/.maxi/.env)", action: #selector(openEnvConfig), keyEquivalent: "e")
+        openEnvMainItem.target = self
+        menu.addItem(openEnvMainItem)
+
+        let reloadMainItem = NSMenuItem(title: "🔄 Reload Configuration", action: #selector(reloadConfigAction), keyEquivalent: "r")
+        reloadMainItem.target = self
+        menu.addItem(reloadMainItem)
+
+        let restartMainItem = NSMenuItem(title: "⚡ Restart Maxi Daemon", action: #selector(restartMaxiAction), keyEquivalent: "")
+        restartMainItem.target = self
+        menu.addItem(restartMainItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -229,6 +278,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bottomDockMenuItem?.state = AppState.shared.positionMode == .bottomDock ? .on : .off
         topNotchMenuItem?.state = AppState.shared.positionMode == .topNotch ? .on : .off
         toggleIdleItem?.state = AppState.shared.alwaysShowIdlePill ? .on : .off
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let backendActions: [Selector] = [#selector(clearContext), #selector(toggleAutoSpeech),
+            #selector(selectModel(_:)), #selector(promptCustomModel), #selector(refreshModelsAction),
+            #selector(reloadSkillsAndMCP)]
+        if let action = menuItem.action, backendActions.contains(action) {
+            return AppState.shared.wsConnected
+        }
+        return true
     }
 
     private func rebuildModelMenu() {
@@ -264,8 +323,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func selectModel(_ sender: NSMenuItem) {
         guard let model = sender.representedObject as? String else { return }
-        AppState.shared.currentModel = model
-        modelParentItem?.title = "🤖 Model: \(model)"
         WebSocketClient.shared.setModel(model) { [weak self] in
             Task { @MainActor in
                 self?.rebuildModelMenu()
@@ -274,6 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func promptCustomModel() {
+        guard AppState.shared.wsConnected else { return }
         let alert = NSAlert()
         alert.messageText = "Set Custom Model Name"
         alert.informativeText = "Enter any Ollama, Groq, or OpenAI-compatible model identifier:"
@@ -291,8 +349,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if !AppState.shared.availableModels.contains(model) {
                     AppState.shared.availableModels.append(model)
                 }
-                AppState.shared.currentModel = model
-                modelParentItem?.title = "🤖 Model: \(model)"
                 WebSocketClient.shared.setModel(model) { [weak self] in
                     Task { @MainActor in
                         self?.rebuildModelMenu()
@@ -312,8 +368,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
+    @objc private func openEnvConfig() {
+        AppState.shared.openEnvConfig()
+    }
+
     @objc private func reloadSkillsAndMCP() {
-        WebSocketClient.shared.reloadDaemon()
+        AppState.shared.reloadConfig()
+    }
+
+    @objc private func reloadConfigAction() {
+        AppState.shared.reloadConfig()
+    }
+
+    @objc private func restartMaxiAction() {
+        AppState.shared.restartMaxi()
     }
 
     @objc private func toggleAutoSpeech() {
@@ -335,9 +403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleIdlePill() {
-        AppState.shared.alwaysShowIdlePill.toggle()
-        syncPanelVisibility()
+        AppState.shared.setAlwaysShowIdle(!AppState.shared.alwaysShowIdlePill)
     }
+
 
     @objc private func showMaxi() {
         AppState.shared.revealHUD()
@@ -345,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showLastToast() {
         AppState.shared.showToast = true
-        syncPanelVisibility()
+        AppState.shared.revealHUD()
     }
 
     @objc private func clearContext() {

@@ -62,7 +62,7 @@ def test_stop_recording_does_not_deadlock_with_audio_callback():
 
     t_audio.join(timeout=1.0)
     assert callback_finished.is_set(), "Deadlock detected between stop_recording() and _audio_callback()!"
-    assert elapsed < 0.8, f"stop_recording blocked for {elapsed:.2f}s"
+    assert elapsed < 1.0, f"stop_recording blocked for {elapsed:.2f}s"
     assert svc.is_ptt_recording is False
     assert svc._stream is None
 

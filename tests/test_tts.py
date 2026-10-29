@@ -6,6 +6,7 @@ from app.core.tts import (
     clean_text_for_tts,
     extract_speech_and_display_text,
     is_kokoro_voice,
+    is_ollama_voice,
     resolve_siri_voice,
     translate_expressive_annotations,
     TTSService,
@@ -139,6 +140,30 @@ class TestTTSServiceExecution(unittest.TestCase):
             self.assertIn("[Haha](/həhˈɑː/)!", cmd[6])
         finally:
             settings.enable_tts = orig_enable
+
+    @patch("subprocess.Popen")
+    def test_speak_invokes_ollama_phonon_command(self, mock_popen):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        svc = TTSService()
+        orig_enable = settings.enable_tts
+        orig_provider = getattr(settings, "tts_provider", "siri")
+        try:
+            settings.enable_tts = True
+            settings.tts_provider = "ollama"
+            spoken = svc.speak("Hello from Ollama phonon.", voice="Hugh", block=True)
+            self.assertEqual(spoken, "Hello from Ollama phonon.")
+            mock_popen.assert_called_once()
+            cmd = mock_popen.call_args[0][0]
+            self.assertIn("phonon", cmd[4])
+            self.assertEqual(cmd[5], "Hugh")
+            self.assertEqual(cmd[6], "Hello from Ollama phonon.")
+        finally:
+            settings.enable_tts = orig_enable
+            settings.tts_provider = orig_provider
 
     def test_stop_terminates_active_process(self):
         svc = TTSService()

@@ -259,3 +259,38 @@ def test_willow_api_routes(tmp_path: Path):
         assert r_inj.json()["status"] == "injected"
 
 
+def test_voice_toggle_and_control_api_routes():
+    from app.main import app
+    from app.core.voice_service import voice_service
+
+    client = TestClient(app)
+
+    with patch.object(voice_service, "start_recording") as mock_start, \
+         patch.object(voice_service, "stop_recording") as mock_stop:
+        # 1. Start voice
+        r_start = client.post("/api/voice/start?locked=true")
+        assert r_start.status_code == 200
+        assert r_start.json() == {"status": "recording", "locked": True}
+        mock_start.assert_called_with(locked=True)
+
+        # 2. Stop voice
+        r_stop = client.post("/api/voice/stop")
+        assert r_stop.status_code == 200
+        assert r_stop.json() == {"status": "processing"}
+        mock_stop.assert_called_once()
+
+        # 3. Toggle voice when idle -> starts
+        voice_service.is_ptt_recording = False
+        r_toggle1 = client.post("/api/voice/toggle")
+        assert r_toggle1.status_code == 200
+        assert r_toggle1.json() == {"status": "recording"}
+
+        # 4. Toggle voice when recording -> stops
+        voice_service.is_ptt_recording = True
+        r_toggle2 = client.post("/api/voice/toggle")
+        assert r_toggle2.status_code == 200
+        assert r_toggle2.json() == {"status": "processing"}
+        voice_service.is_ptt_recording = False
+
+
+

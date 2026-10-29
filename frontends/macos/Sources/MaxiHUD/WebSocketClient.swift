@@ -70,8 +70,6 @@ final class WebSocketClient {
         let task = session.webSocketTask(with: wsURL)
         webSocketTask = task
         task.resume()
-        syncTTSState()
-        syncConfig()
         receiveNext(from: task)
         sendPing(on: task)
     }
@@ -84,7 +82,7 @@ final class WebSocketClient {
                 guard let self, self.webSocketTask === task else { return }
                 switch result {
                 case .success(let message):
-                    AppState.shared.wsConnected = true
+                    self.markConnected(task)
                     if case .string(let text) = message {
                         self.handlePayload(text)
                     }
@@ -117,7 +115,7 @@ final class WebSocketClient {
                 if !AppState.shared.wsConnected {
                     NSLog("[MaxiHUD] Connected to voice daemon")
                 }
-                AppState.shared.wsConnected = true
+                self.markConnected(task)
                 self.heartbeatTask = Task { [weak self] in
                     guard let self else { return }
                     do {
@@ -127,6 +125,20 @@ final class WebSocketClient {
                 }
             }
         }
+    }
+
+    private func markConnected(_ task: URLSessionWebSocketTask) {
+        guard webSocketTask === task else { return }
+        let wasConnected = AppState.shared.wsConnected
+        AppState.shared.wsConnected = true
+        if !wasConnected {
+            syncTTSState()
+            syncConfig()
+        }
+    }
+
+    private var canUseBackend: Bool {
+        isRunning && webSocketTask != nil && AppState.shared.wsConnected
     }
 
     private func connectionFailed(_ task: URLSessionWebSocketTask, reason: String) {
@@ -179,7 +191,8 @@ final class WebSocketClient {
             let levels = (obj["levels"] as? [Double]) ?? [0.15, 0.2, 0.25, 0.2, 0.15]
             let locked = (obj["locked"] as? Bool) ?? false
             let elapsed = (obj["elapsed"] as? Double) ?? 0.0
-            state.handleAudioLevels(levels, locked: locked, elapsed: elapsed)
+            let isSpeaking = (obj["speaking"] as? Bool) ?? false
+            state.handleAudioLevels(levels, locked: locked, elapsed: elapsed, isSpeaking: isSpeaking)
 
         case "voice_stop":
             let cancelled = (obj["cancelled"] as? Bool) ?? false
@@ -227,38 +240,61 @@ final class WebSocketClient {
     }
 
     func cancelActiveCommand() {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("voice/cancel"))
         req.httpMethod = "POST"
         URLSession.shared.dataTask(with: req).resume()
     }
 
+    func toggleVoice(completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
+        var req = URLRequest(url: apiBase.appendingPathComponent("voice/toggle"))
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { _, response, _ in
+            if (response as? HTTPURLResponse)?.statusCode == 200 {
+                completion?()
+            }
+        }.resume()
+    }
+
     func clearContext(completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("context/clear"))
         req.httpMethod = "POST"
-        URLSession.shared.dataTask(with: req) { _, _, _ in
+        URLSession.shared.dataTask(with: req) { _, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200 else { return }
             completion?()
         }.resume()
     }
 
     func stopTTS() {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("tts/stop"))
         req.httpMethod = "POST"
         URLSession.shared.dataTask(with: req).resume()
     }
 
-    func setAutoSpeech(enabled: Bool) {
+    func setAutoSpeech(enabled: Bool, completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("config"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = ["enable_tts": enabled ? "true" : "false"]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: req).resume()
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["status"] as? String == "updated" else { return }
+            completion?()
+        }.resume()
     }
 
     func syncTTSState() {
+        guard canUseBackend else { return }
         let req = URLRequest(url: apiBase.appendingPathComponent("tts"))
-        URLSession.shared.dataTask(with: req) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let active = json["active"] as? [String: Any],
                   let enabled = active["enable_tts"] as? Bool else { return }
@@ -270,9 +306,11 @@ final class WebSocketClient {
     }
 
     func syncConfig() {
+        guard canUseBackend else { return }
         let req = URLRequest(url: apiBase.appendingPathComponent("config"))
-        URLSession.shared.dataTask(with: req) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let config = json["config"] as? [String: Any],
                   let model = config["llm_model"] as? String else { return }
@@ -283,9 +321,11 @@ final class WebSocketClient {
     }
 
     func fetchAvailableModels(completion: (([String]) -> Void)? = nil) {
+        guard canUseBackend else { return }
         let req = URLRequest(url: apiBase.appendingPathComponent("models"))
-        URLSession.shared.dataTask(with: req) { data, _, _ in
-            guard let data = data,
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let models = json["models"] as? [String] else {
                 completion?([])
@@ -305,12 +345,16 @@ final class WebSocketClient {
     }
 
     func setModel(_ modelName: String, completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("config"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = ["model": modelName]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: req) { _, _, _ in
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["status"] as? String == "updated" else { return }
             Task { @MainActor in
                 AppState.shared.currentModel = modelName
                 completion?()
@@ -319,7 +363,26 @@ final class WebSocketClient {
     }
 
     func reloadDaemon(completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("reload"))
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            guard error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["status"] as? String == "reloaded" else { return }
+            Task { @MainActor in
+                if let model = json["model"] as? String, !model.isEmpty {
+                    AppState.shared.currentModel = model
+                }
+                self.syncConfig()
+                completion?()
+            }
+        }.resume()
+    }
+
+    func restartDaemon(completion: (() -> Void)? = nil) {
+        guard canUseBackend else { return }
+        var req = URLRequest(url: apiBase.appendingPathComponent("restart"))
         req.httpMethod = "POST"
         URLSession.shared.dataTask(with: req) { _, _, _ in
             Task { @MainActor in
@@ -329,6 +392,7 @@ final class WebSocketClient {
     }
 
     func injectTextAtCursor(_ text: String) {
+        guard canUseBackend else { return }
         guard !text.isEmpty else { return }
         var req = URLRequest(url: apiBase.appendingPathComponent("inject"))
         req.httpMethod = "POST"

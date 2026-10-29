@@ -13,6 +13,7 @@ install_dir="${MAXI_INSTALL_DIR:-$HOME/.maxi}"
 apps_dir="${MAXI_APPS_DIR:-$HOME/Applications}"
 bin_dir="${MAXI_BIN_DIR:-$HOME/.local/bin}"
 app_source=''
+wheel_source=''
 configure=1
 launch=1
 open_hud=1
@@ -21,12 +22,14 @@ die() { printf 'Maxi: %s\n' "$*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --app-source) [[ $# -ge 2 ]] || die '--app-source needs a path'; app_source="$2"; shift 2 ;;
+        --wheel-source) [[ $# -ge 2 ]] || die '--wheel-source needs a path'; wheel_source="$2"; shift 2 ;;
         --no-configure) configure=0; shift ;;
         --no-launch) launch=0; shift ;;
         --no-hud) open_hud=0; shift ;;
         --help|-h)
             printf '%s\n' 'Install Maxi for macOS 14+ (Apple Silicon and Intel).' \
-                '  --app-source PATH  Use a bundled Maxi.app instead of downloading it.' \
+                '  --app-source PATH  Use a local Maxi.app instead of downloading it.' \
+                '  --wheel-source PATH  Use a local wheel and adjacent SHA256SUMS manifest.' \
                 '  --no-configure     Skip the interactive provider wizard.' \
                 '  --no-launch        Install without starting the daemon or HUD.' \
                 '  --no-hud           Start and verify the backend without opening the HUD.' \
@@ -53,24 +56,23 @@ verify() {
     expected="$(awk -v name="$name" '$2 == name { print $1 }' "$manifest")"
     [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]] || die "No unique checksum for $name"
     actual="$(shasum -a 256 "$path" | awk '{print $1}')"
-    [[ "$actual" == "$expected" ]] || die "Checksum mismatch for $name. Nothing was installed."
+    [[ "$actual" == "$expected" ]] || die "Checksum mismatch for $name. This artifact was not installed."
 }
 
 printf '\n∑ Maxi · macOS installer\n\n'
-if [[ -z "$app_source" ]]; then
-    printf 'Downloading the compiled app…\n'
-    fetch "$release_url/$archive_name" "$work_dir/$archive_name"
+# The backend wheel and native app are independent release artifacts.
+if [[ -n "$wheel_source" ]]; then
+    [[ "$(basename "$wheel_source")" == "$wheel_name" ]] || die "Expected $wheel_name"
+    wheel_source="$(cd "$(dirname "$wheel_source")" && pwd -P)/$wheel_name"
+    wheel="$wheel_source"
+    verify "$wheel" "$(dirname "$wheel")/SHA256SUMS"
+else
+    printf 'Downloading the Python backend wheel…\n'
     fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
-    verify "$work_dir/$archive_name" "$work_dir/SHA256SUMS"
-    ditto -x -k "$work_dir/$archive_name" "$work_dir/unpacked"
-    app_source="$work_dir/unpacked/Maxi.app"
+    fetch "$release_url/$wheel_name" "$work_dir/$wheel_name"
+    wheel="$work_dir/$wheel_name"
+    verify "$wheel" "$work_dir/SHA256SUMS"
 fi
-[[ -d "$app_source/Contents/Resources" ]] || die 'The Maxi.app bundle is missing.'
-app_source="$(cd "$app_source" && pwd -P)"
-resources="$app_source/Contents/Resources"
-wheel="$resources/$wheel_name"
-[[ -f "$wheel" && -f "$resources/BACKEND-SHA256SUMS" ]] || die 'The bundled backend is missing.'
-verify "$wheel" "$resources/BACKEND-SHA256SUMS"
 
 mkdir -p "$install_dir" "$apps_dir" "$bin_dir"
 chmod 700 "$install_dir"
@@ -95,9 +97,24 @@ if [[ ! -x "$venv/bin/python" ]]; then
 fi
 "$venv/bin/python" -c 'import sys; assert sys.version_info >= (3, 10), "Python 3.10+ is required"'
 printf 'Installing the backend and voice dependencies…\n'
-"$uv_bin" pip install --python "$venv/bin/python" --only-binary :all: "${wheel}[voice]"
+"$uv_bin" pip install --python "$venv/bin/python" --only-binary :all: --reinstall-package maxi-ai "${wheel}[voice]"
 "$venv/bin/python" -m app.cli --version
 "$venv/bin/python" -c 'from importlib.util import find_spec; assert all(find_spec(m) for m in ("sounddevice", "pynput", "numpy")), "Voice dependencies are missing"'
+
+# Install the native app only after the backend wheel installation succeeds.
+if [[ -z "$app_source" ]]; then
+    printf 'Downloading the compiled app…\n'
+    fetch "$release_url/$archive_name" "$work_dir/$archive_name"
+    if [[ ! -f "$work_dir/SHA256SUMS" ]]; then
+        fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
+    fi
+    verify "$work_dir/$archive_name" "$work_dir/SHA256SUMS"
+    ditto -x -k "$work_dir/$archive_name" "$work_dir/unpacked"
+    app_source="$work_dir/unpacked/Maxi.app"
+fi
+[[ -d "$app_source/Contents/Resources" ]] || die 'The Maxi.app bundle is missing.'
+app_source="$(cd "$app_source" && pwd -P)"
+resources="$app_source/Contents/Resources"
 
 fresh_config=0
 if [[ ! -f "$install_dir/.env" ]]; then
@@ -118,7 +135,7 @@ if [[ "$app_source" != "$target_app" ]]; then
     ditto "$app_source" "$new_app"
     # Opening an already-running old bundle can leave its old, hidden HUD alive.
     # Stop only GUI processes from the exact app copies being replaced; keep
-    # the daemon, recording state, and conversation running independently.
+    # the backend lifecycle is managed separately below.
     "$venv/bin/python" - "$target_app" "$app_source" <<'PY'
 import os, signal, subprocess, sys, time
 from pathlib import Path
@@ -172,24 +189,10 @@ if [[ "$configure" -eq 1 && "$fresh_config" -eq 1 ]]; then
 fi
 if [[ "$launch" -eq 1 ]]; then
     printf '\nStarting the Python backend…\n'
-    (cd "$install_dir" && "$venv/bin/python" -m app.cli start)
-    printf 'Waiting for the backend to become ready…\n'
-    "$venv/bin/python" - "$install_dir/daemon.log" <<'PY'
-import json, sys, time, urllib.request
-deadline = time.monotonic() + 30
-while time.monotonic() < deadline:
-    try:
-        with urllib.request.urlopen('http://127.0.0.1:4848/api/health', timeout=1) as response:
-            data = json.load(response)
-        if data.get('status') == 'ok' and data.get('service') == 'Maxi Agent Daemon':
-            print('Maxi backend is running and healthy at http://127.0.0.1:4848')
-            break
-    except (OSError, ValueError):
-        pass
-    time.sleep(0.25)
-else:
-    raise SystemExit('Maxi is installed, but its backend did not become ready. Check ' + sys.argv[1])
-PY
+    backend_action=start
+    # An existing daemon still has the previous wheel loaded in memory.
+    if [[ -f "$install_dir/daemon.pid" ]]; then backend_action=restart; fi
+    (cd "$install_dir" && "$venv/bin/python" -m app.cli "$backend_action")
     if [[ "$open_hud" -eq 1 ]]; then
         printf '\nOpening the Maxi HUD…\n'
         open "$target_app"

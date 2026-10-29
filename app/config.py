@@ -30,9 +30,9 @@ class Settings(BaseSettings):
         description="API key for the endpoint"
     )
     openai_model: str = Field(
-        default="gpt-oss:120b-cloud",
+        default="gemma2:31b-cloud",
         alias="OPENAI_MODEL",
-        description="Target model identifier (e.g. gpt-oss:120b-cloud in Ollama)"
+        description="Target model identifier (e.g. gemma2:31b-cloud in Ollama)"
     )
 
     # Voice Service Settings
