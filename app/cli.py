@@ -197,6 +197,19 @@ def cmd_start(args):
 
     env = dict(os.environ)
     env["MAXI_DAEMON_REDIRECTED"] = "1"
+    if sys.platform.startswith("linux"):
+        if "DISPLAY" not in env:
+            env["DISPLAY"] = ":0"
+        if "XAUTHORITY" not in env:
+            import glob
+            uid = os.getuid()
+            auths = glob.glob(f"/run/user/{uid}/.mutter-Xwaylandauth*") or glob.glob(f"/run/user/{uid}/.Xauthority*")
+            if auths:
+                env["XAUTHORITY"] = auths[0]
+            elif (Path.home() / ".Xauthority").exists():
+                env["XAUTHORITY"] = str(Path.home() / ".Xauthority")
+        if "WAYLAND_DISPLAY" not in env and Path(f"/run/user/{os.getuid()}/wayland-0").exists():
+            env["WAYLAND_DISPLAY"] = "wayland-0"
 
     py_exe = get_python_exe()
     with open(log_file, "a") as log_out:
@@ -734,6 +747,23 @@ def cmd_glossary(args):
         print("")
 
 
+def cmd_voice(args):
+    """Trigger or toggle voice input recording on the active Maxi daemon."""
+    health = backend_health()
+    if not health:
+        raise SystemExit("Maxi daemon is not running. Start it with: maxi start")
+    active_port = health.get("active_port", get_active_port())
+    action = getattr(args, "voice_action", "toggle") or "toggle"
+    url = f"http://127.0.0.1:{active_port}/api/voice/{action}"
+    try:
+        resp = httpx.post(url, timeout=5.0)
+        data = resp.json()
+        status = data.get("status", "ok")
+        print(f"🎙️ Maxi Voice [{action}]: {status}")
+    except Exception as e:
+        raise SystemExit(f"Could not contact Maxi daemon on port {active_port}: {e}")
+
+
 HUD_PID_FILE = Path.home() / ".maxi" / "hud.pid"
 
 
@@ -898,6 +928,10 @@ def main():
     tts_sub.add_parser("on", help="Enable Siri TTS voice output")
     tts_sub.add_parser("off", help="Disable Siri TTS voice output")
 
+    # voice
+    p_voice = subparsers.add_parser("voice", help="Trigger or toggle voice input recording")
+    p_voice.add_argument("voice_action", nargs="?", choices=["toggle", "start", "stop"], default="toggle", help="Voice action (default: toggle)")
+
     # config
     p_cfg = subparsers.add_parser("config", help="View or update LLM, Voice STT, and Siri TTS configuration")
     p_cfg.add_argument("--llm-url", help="Set OpenAI-compatible LLM endpoint URL")
@@ -961,6 +995,8 @@ def main():
         cmd_glossary(args)
     elif args.command == "tts":
         cmd_tts(args)
+    elif args.command == "voice":
+        cmd_voice(args)
     elif args.command == "config":
         cmd_config(args)
     else:

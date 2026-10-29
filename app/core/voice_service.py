@@ -45,6 +45,21 @@ except Exception:
     sd = None
 
 try:
+    if sys.platform.startswith("linux"):
+        if "DISPLAY" not in os.environ:
+            os.environ["DISPLAY"] = ":0"
+        if "XAUTHORITY" not in os.environ:
+            import glob
+            uid = os.getuid()
+            auths = glob.glob(f"/run/user/{uid}/.mutter-Xwaylandauth*") or glob.glob(f"/run/user/{uid}/.Xauthority*")
+            if auths:
+                os.environ["XAUTHORITY"] = auths[0]
+            elif (Path.home() / ".Xauthority").exists():
+                os.environ["XAUTHORITY"] = str(Path.home() / ".Xauthority")
+        if "WAYLAND_DISPLAY" not in os.environ:
+            w_disp = Path(f"/run/user/{os.getuid()}/wayland-0")
+            if w_disp.exists():
+                os.environ["WAYLAND_DISPLAY"] = "wayland-0"
     from pynput import keyboard
 except Exception:
     keyboard = None
@@ -371,6 +386,10 @@ class MaxiVoiceService:
             return True
         if hasattr(key, "vk") and key.vk in (59, 62, 17, 162, 163):
             return True
+        if hasattr(key, "name") and key.name in ("ctrl", "ctrl_l", "ctrl_r"):
+            return True
+        if "ctrl" in str(key).lower():
+            return True
         return False
 
     def _is_space(self, key) -> bool:
@@ -379,6 +398,10 @@ class MaxiVoiceService:
         if hasattr(key, "vk") and key.vk in (49, 32):
             return True
         if hasattr(key, "char") and key.char == " ":
+            return True
+        if hasattr(key, "name") and key.name == "space":
+            return True
+        if "space" in str(key).lower():
             return True
         return False
 
