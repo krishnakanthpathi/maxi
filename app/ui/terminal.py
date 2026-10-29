@@ -154,7 +154,7 @@ def render_banner(version: str = "0.3.0b1") -> str:
 # Dashboard Views
 # =============================================================================
 
-def render_status_card(health_data: Optional[Dict[str, Any]] = None) -> str:
+def render_status_card(health_data: Optional[Dict[str, Any]] = None, port: Optional[int] = None) -> str:
     """Renders a comprehensive, high-aesthetic terminal status dashboard."""
     import httpx
     from app import __version__
@@ -163,13 +163,14 @@ def render_status_card(health_data: Optional[Dict[str, Any]] = None) -> str:
 
     is_running = health_data is not None
     pid = get_pid()
+    active_port = port or (health_data.get("active_port") if health_data else None) or settings.port
     mcp_count = 0
     tools_list = []
     sounds_info = {}
     config_info = {}
 
     if is_running:
-        base_url = f"http://127.0.0.1:{settings.port}"
+        base_url = f"http://127.0.0.1:{active_port}"
         try:
             r = httpx.get(f"{base_url}/api/mcp/tools", timeout=1.5)
             if r.status_code == 200:
@@ -221,7 +222,7 @@ def render_status_card(health_data: Optional[Dict[str, Any]] = None) -> str:
 
     lines = [
         f"{Palette.BOLD}Daemon State:{Palette.RESET}       {daemon_status}",
-        f"{Palette.BOLD}HTTP API:{Palette.RESET}           {Palette.CYAN}http://{settings.host}:{settings.port}{Palette.RESET} {Palette.DARK}· WebSocket /ws{Palette.RESET}",
+        f"{Palette.BOLD}HTTP API:{Palette.RESET}           {Palette.CYAN}http://{settings.host}:{active_port}{Palette.RESET} {Palette.DARK}· WebSocket /ws{Palette.RESET}",
         f"{Palette.BOLD}Config File:{Palette.RESET}        {Palette.DARK}{env_file_path}{Palette.RESET}",
         "",
         f"{Palette.BRAND}{Palette.BOLD}── Intelligence & Speech ─────────────────────────────{Palette.RESET}",
@@ -356,12 +357,15 @@ def _style_inline(text: str) -> str:
 # Interactive Streaming Chat REPL
 # =============================================================================
 
-async def stream_agent_response(prompt: str, base_url: str = "http://127.0.0.1:4848"):
+async def stream_agent_response(prompt: str, base_url: Optional[str] = None):
     """
     Connects to the daemon's WebSocket endpoint to stream the agent response
     token by token with live tool cards in the terminal.
     """
     import websockets
+    if not base_url:
+        from app.cli import get_active_port
+        base_url = f"http://127.0.0.1:{get_active_port()}"
 
     ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
 
@@ -442,10 +446,14 @@ async def stream_agent_response(prompt: str, base_url: str = "http://127.0.0.1:4
             print(f"{Palette.ROSE}✖ Could not reach Maxi Daemon on {base_url}: {ex}{Palette.RESET}")
 
 
-def run_interactive_chat(base_url: str = "http://127.0.0.1:4848"):
+def run_interactive_chat(base_url: Optional[str] = None):
     """Launches an interactive terminal chat session with Maxi."""
     import asyncio
     from app import __version__
+
+    if not base_url:
+        from app.cli import get_active_port
+        base_url = f"http://127.0.0.1:{get_active_port()}"
 
     print(render_banner(__version__))
     print(f"\n{Palette.BOLD}Interactive Terminal Chat{Palette.RESET} {Palette.DARK}(Type 'exit' or press Ctrl+C to quit){Palette.RESET}\n")

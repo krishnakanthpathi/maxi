@@ -16,15 +16,26 @@ final class WebSocketClient {
     private var heartbeatTask: Task<Void, Never>?
     private var heartbeatTimeoutTask: Task<Void, Never>?
 
+    static func defaultPort() -> Int {
+        let portFile = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".maxi/daemon.port")
+        if let content = try? String(contentsOf: portFile, encoding: .utf8),
+           let port = Int(content.trimmingCharacters(in: .whitespacesAndNewlines)),
+           port > 0 && port < 65536 {
+            return port
+        }
+        return 4848
+    }
+
     init(
-        wsURL: URL = URL(string: "ws://127.0.0.1:4848/ws")!,
-        apiBase: URL = URL(string: "http://127.0.0.1:4848/api")!,
+        wsURL: URL? = nil,
+        apiBase: URL? = nil,
         reconnectDelay: UInt64 = 1_500_000_000,
         heartbeatInterval: UInt64 = 5_000_000_000,
         heartbeatTimeout: UInt64 = 5_000_000_000
     ) {
-        self.wsURL = wsURL
-        self.apiBase = apiBase
+        let port = WebSocketClient.defaultPort()
+        self.wsURL = wsURL ?? URL(string: "ws://127.0.0.1:\(port)/ws")!
+        self.apiBase = apiBase ?? URL(string: "http://127.0.0.1:\(port)/api")!
         self.reconnectDelay = reconnectDelay
         self.heartbeatInterval = heartbeatInterval
         self.heartbeatTimeout = heartbeatTimeout

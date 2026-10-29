@@ -342,8 +342,10 @@ def save_config(updates: Dict[str, str], notify_daemon: bool = True) -> Tuple[bo
     hot_reloaded = False
     if notify_daemon:
         try:
+            from app.cli import get_active_port
+            active_port = get_active_port()
             with httpx.Client(timeout=1.5) as client:
-                resp = client.post("http://127.0.0.1:4848/api/config", json=canonical_updates)
+                resp = client.post(f"http://127.0.0.1:{active_port}/api/config", json=canonical_updates)
                 if resp.status_code == 200:
                     hot_reloaded = True
         except Exception:

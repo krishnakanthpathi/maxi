@@ -15,6 +15,50 @@ import httpx
 from app import __version__
 
 PID_FILE = Path.home() / ".maxi" / "daemon.pid"
+PORT_FILE = Path.home() / ".maxi" / "daemon.port"
+
+
+def get_configured_port() -> int:
+    from app.config import settings
+    return getattr(settings, "port", 4848) or 4848
+
+
+def get_active_port() -> int:
+    """Returns the port currently in use by the running daemon, else configured port."""
+    if PORT_FILE.exists():
+        try:
+            p = int(PORT_FILE.read_text().strip())
+            if 1 <= p <= 65535:
+                return p
+        except ValueError:
+            pass
+    return get_configured_port()
+
+
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    """Checks whether a TCP port is currently occupied by another process."""
+    import socket
+    bind_host = "127.0.0.1" if host in ("0.0.0.0", "localhost") else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((bind_host, port))
+            return False
+        except OSError:
+            return True
+
+
+def resolve_listen_port(desired_port: int, host: str = "127.0.0.1", max_fallback_attempts: int = 10) -> int:
+    """
+    Returns desired_port if free, or scans forward for the first free fallback port.
+    """
+    if not is_port_in_use(desired_port, host=host):
+        return desired_port
+    for offset in range(1, max_fallback_attempts + 1):
+        candidate = desired_port + offset
+        if not is_port_in_use(candidate, host=host):
+            return candidate
+    return desired_port
 
 
 def get_pid() -> int | None:
@@ -56,11 +100,19 @@ def cmd_run(args):
 
     with daemon_lock():
         PID_FILE.write_text(str(os.getpid()))
+        desired_port = getattr(args, "port", None) or settings.port
+        actual_port = resolve_listen_port(desired_port, host=settings.host)
+        if actual_port != desired_port:
+            print(f"⚠️  Port {desired_port} is in use by another process. Falling back to port {actual_port}.")
+        PORT_FILE.write_text(str(actual_port))
+        settings.port = actual_port
+        os.environ["PORT"] = str(actual_port)
+        os.environ["MAX_PORT"] = str(actual_port)
         try:
             uvicorn.run(
                 "app.main:app",
                 host=settings.host,
-                port=settings.port,
+                port=actual_port,
                 reload=(args.reload or settings.debug) and not os.environ.get("MAXI_DAEMON_REDIRECTED"),
                 log_level="info",
                 timeout_graceful_shutdown=2,
@@ -68,6 +120,8 @@ def cmd_run(args):
         finally:
             if PID_FILE.exists() and PID_FILE.read_text().strip() == str(os.getpid()):
                 PID_FILE.unlink(missing_ok=True)
+            if PORT_FILE.exists():
+                PORT_FILE.unlink(missing_ok=True)
 
 
 def get_python_exe() -> str:
@@ -75,18 +129,34 @@ def get_python_exe() -> str:
     return sys.executable
 
 
-def backend_health():
+def backend_health(port: int | None = None):
     from app.config import settings
     host = "127.0.0.1" if settings.host == "0.0.0.0" else settings.host
-    url = f"http://{host}:{settings.port}"
-    try:
-        response = httpx.get(f"{url}/api/health", timeout=1, trust_env=False)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("status") == "ok" and data.get("service") == "Maxi Agent Daemon":
-            return data
-    except (httpx.HTTPError, ValueError, AttributeError):
-        pass
+
+    ports_to_check = []
+    if port is not None:
+        ports_to_check.append(port)
+    active_p = get_active_port()
+    if active_p not in ports_to_check:
+        ports_to_check.append(active_p)
+    if settings.port not in ports_to_check:
+        ports_to_check.append(settings.port)
+    for offset in range(1, 10):
+        p = settings.port + offset
+        if p not in ports_to_check:
+            ports_to_check.append(p)
+
+    for check_p in ports_to_check:
+        url = f"http://{host}:{check_p}"
+        try:
+            response = httpx.get(f"{url}/api/health", timeout=1, trust_env=False)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("status") == "ok" and data.get("service") == "Maxi Agent Daemon":
+                data["active_port"] = check_p
+                return data
+        except (httpx.HTTPError, ValueError, AttributeError):
+            pass
     return None
 
 
@@ -109,7 +179,8 @@ def cmd_start(args):
     existing_pid = get_pid()
     health = backend_health()
     if health:
-        print(f"⚡ Maxi backend is already healthy on port {settings.port}.")
+        active_port = health.get("active_port", get_active_port())
+        print(f"⚡ Maxi backend is already healthy on port {active_port}.")
         return
     if existing_pid:
         raise SystemExit(f"Maxi PID {existing_pid} is alive but its API is unavailable. Check {PID_FILE.parent / 'daemon.log'}; run maxi restart if needed.")
@@ -145,7 +216,8 @@ def cmd_start(args):
             break
         health = backend_health()
         if health and health.get("pid") == proc.pid:
-            print(f"✅ Maxi backend is healthy (PID: {proc.pid}) on port {settings.port}")
+            active_port = health.get("active_port", get_active_port())
+            print(f"✅ Maxi backend is healthy (PID: {proc.pid}) on port {active_port}")
             print(f"📜 Logs: {log_file}")
             return
         time.sleep(0.25)
@@ -158,6 +230,8 @@ def cmd_start(args):
             proc.wait()
     if PID_FILE.exists() and PID_FILE.read_text().strip() == str(proc.pid):
         PID_FILE.unlink(missing_ok=True)
+    if PORT_FILE.exists():
+        PORT_FILE.unlink(missing_ok=True)
     raise SystemExit(f"Maxi backend did not become healthy. Inspect logs at {log_file}")
 
 
@@ -167,6 +241,7 @@ def cmd_stop(args):
     if not pid:
         # Also check if something is on port 4848
         print("ℹ️  No active Maxi daemon PID file found.")
+        PORT_FILE.unlink(missing_ok=True)
         return
 
     print(f"🛑 Stopping Maxi daemon (PID: {pid})...")
@@ -181,6 +256,7 @@ def cmd_stop(args):
         print("ℹ️  Process already terminated.")
     finally:
         PID_FILE.unlink(missing_ok=True)
+        PORT_FILE.unlink(missing_ok=True)
 
 
 def cmd_restart(args):
@@ -194,7 +270,8 @@ def cmd_status(args):
     """Check status of Maxi daemon and active tools."""
     from app.ui.terminal import render_status_card
     health = backend_health()
-    print("\n" + render_status_card(health) + "\n")
+    active_port = health.get("active_port") if health else get_active_port()
+    print("\n" + render_status_card(health, port=active_port) + "\n")
 
 
 def _run_config_wizard():
