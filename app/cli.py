@@ -6,6 +6,7 @@ Entrypoint for `maxi start`, `maxi stop`, `maxi status`, `maxi hud`, `maxi run`.
 import sys
 import os
 import time
+import tempfile
 import argparse
 import subprocess
 import signal
@@ -747,8 +748,24 @@ def cmd_glossary(args):
         print("")
 
 
+VOICE_CLI_LOCK = Path(tempfile.gettempdir()) / "maxi_voice_cli.lock"
+
+
 def cmd_voice(args):
-    """Trigger or toggle voice input recording on the active Maxi daemon."""
+    """Trigger or toggle voice input recording on the active Maxi daemon with key-repeat suppression."""
+    now = time.time()
+    if VOICE_CLI_LOCK.exists():
+        try:
+            last_ts = float(VOICE_CLI_LOCK.read_text().strip())
+            if now - last_ts < 0.75:
+                return  # Silently suppress rapid key-repeat spawns from GNOME
+        except Exception:
+            pass
+    try:
+        VOICE_CLI_LOCK.write_text(str(now))
+    except Exception:
+        pass
+
     health = backend_health()
     if not health:
         raise SystemExit("Maxi daemon is not running. Start it with: maxi start")

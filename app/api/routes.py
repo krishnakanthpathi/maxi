@@ -108,11 +108,11 @@ async def toggle_voice():
     now = time.monotonic()
     from app.core.voice_service import voice_service
 
-    if now - _last_voice_toggle < 0.45:
+    if now - _last_voice_toggle < 0.65:
         return {"status": "recording" if voice_service.is_ptt_recording else "processing", "debounced": True}
 
     if voice_service.is_ptt_recording:
-        if time.time() - voice_service.ptt_press_time < 0.4:
+        if time.time() - voice_service.ptt_press_time < 0.6:
             return {"status": "recording", "debounced": True}
         _last_voice_toggle = now
         voice_service.stop_recording()

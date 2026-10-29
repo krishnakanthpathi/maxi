@@ -105,8 +105,17 @@ def resolve_sound_path(sound_name: str) -> Optional[Path]:
     return None
 
 
+_last_sound_played_time = 0.0
+
+
 def play_sound(sound_name: str):
-    """Play audio chime (macOS native afplay, Linux paplay/aplay, Windows winsound)."""
+    """Play audio chime with debounce to prevent overlapping audio glitches."""
+    global _last_sound_played_time
+    now = time.time()
+    if now - _last_sound_played_time < 0.45:
+        return
+    _last_sound_played_time = now
+
     resolved = resolve_sound_path(sound_name)
     if not resolved:
         return
