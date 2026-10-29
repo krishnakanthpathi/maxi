@@ -32,7 +32,7 @@ def setup_env(tmp_path, platform="Linux"):
     source = tmp_path / "Mounted Disk/Maxi.app"
     resources = source / "Contents/Resources"
     resources.mkdir(parents=True)
-    (resources / "default.env").write_text("OPENAI_MODEL=gemma2:31b-cloud\n")
+    (resources / "default.env").write_text("OPENAI_MODEL=gemma4:31b-cloud\n")
 
     if platform == "Darwin":
         executable(tools / "uname", 'case "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
@@ -102,10 +102,10 @@ def test_universal_installer_linux(tmp_path):
     assert "ExecStart=" in content
     assert "maxi run" in content
 
-    # Check default .env created with gemma2:31b-cloud
+    # Check default .env created with gemma4:31b-cloud
     env_file = prefix / ".env"
     assert env_file.exists()
-    assert "gemma2:31b-cloud" in env_file.read_text()
+    assert "gemma4:31b-cloud" in env_file.read_text()
 
 
 def test_universal_installer_linux_custom_binary(tmp_path):
@@ -157,3 +157,56 @@ def test_universal_installer_macos(tmp_path):
     assert "Darwin installer" in proc.stdout
     assert (apps / "Maxi.app").exists()
     assert (bins / "maxi").is_symlink()
+
+
+def test_universal_installer_cleans_old_data_and_replaces_binary(tmp_path):
+    prefix, apps, bins, source, home, env = setup_env(tmp_path, platform="Linux")
+
+    # Simulate old data and existing binary
+    (prefix / "cache").mkdir(parents=True, exist_ok=True)
+    (prefix / "cache/old_file.txt").write_text("stale cache")
+    (prefix / "history.jsonl").write_text('{"old": "history"}\n')
+    (prefix / "daemon.pid").write_text("999999\n")
+    (prefix / "daemon.log").write_text("old logs\n")
+    (prefix / ".env").write_text("OPENAI_MODEL=llama3.2\nPORT=4848\n")
+
+    bins.mkdir(parents=True, exist_ok=True)
+    old_gui = bins / "maxi-gui"
+    old_gui.write_text("#!/bin/bash\necho old-gui\n")
+    old_gui.chmod(0o755)
+
+    new_gui = tmp_path / "new-maxi-gui"
+    new_gui.write_text("#!/bin/bash\necho new-gui\n")
+    new_gui.chmod(0o755)
+
+    proc = subprocess.run(
+        [
+            "/bin/bash",
+            str(INSTALLER),
+            "--wheel-source",
+            env["MAXI_TEST_WHEEL"],
+            "--binary-source",
+            str(new_gui),
+            "--no-configure",
+            "--no-launch",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert proc.returncode == 0, f"Installer failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
+
+    # Verify old data was deleted
+    assert not (prefix / "cache/old_file.txt").exists()
+    assert not (prefix / "history.jsonl").exists()
+    assert not (prefix / "daemon.log").exists()
+
+    # Verify existing binary was replaced with current one
+    assert old_gui.read_text() == "#!/bin/bash\necho new-gui\n"
+
+    # Verify model was updated to gemma4:31b-cloud
+    env_content = (prefix / ".env").read_text()
+    assert "OPENAI_MODEL=gemma4:31b-cloud" in env_content
+    assert "PORT=4848" in env_content
+

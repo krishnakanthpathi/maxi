@@ -329,7 +329,7 @@ async def list_available_models():
     cfg = get_current_config()
     base_url = (cfg.get("llm_url") or settings.openai_base_url or "").rstrip("/")
     api_key = cfg.get("llm_key") or settings.openai_api_key or ""
-    current_model = cfg.get("llm_model") or settings.openai_model or "gpt-oss:120b-cloud"
+    current_model = cfg.get("llm_model") or settings.openai_model or "gemma4:31b-cloud"
 
     headers = {}
     if api_key and api_key.lower() not in ("ollama", "none", ""):
@@ -372,7 +372,7 @@ async def list_available_models():
             models.remove(current_model)
         models.insert(0, current_model)
     elif not models:
-        models = ["gemma2:31b-cloud", "gpt-oss:120b-cloud", "llama-3.3-70b-versatile"]
+        models = ["gemma4:31b-cloud", "gpt-oss:120b-cloud", "llama-3.3-70b-versatile"]
 
     return {
         "status": "ok",

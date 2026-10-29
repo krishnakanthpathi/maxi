@@ -39,6 +39,6 @@ Whenever the user asks how to add a skill, add an MCP tool, change/switch models
 ### 3. How to Switch or Add Models
 - **Via Menu Bar**: Click the Maxi status bar icon (waveform circle) at the top right of your screen -> **Model** -> select a model or click **Custom Model...**.
 - **Via CLI / API**:
-  `curl -X POST http://127.0.0.1:4848/api/config -H "Content-Type: application/json" -d '{"model": "gemma2:31b-cloud"}'`
+  `curl -X POST http://127.0.0.1:4848/api/config -H "Content-Type: application/json" -d '{"model": "gemma4:31b-cloud"}'`
 - **Via `.env` file**: Edit `OPENAI_MODEL=<model_name>` in `~/.maxi/.env`.
-- **Supported Models**: Any local Ollama model (`gemma2:31b-cloud`, `gpt-oss:120b-cloud`), Groq models (`llama-3.3-70b-versatile`), or OpenRouter models.
+- **Supported Models**: Any local Ollama model (`gemma4:31b-cloud`, `gpt-oss:120b-cloud`), Groq models (`llama-3.3-70b-versatile`), or OpenRouter models.

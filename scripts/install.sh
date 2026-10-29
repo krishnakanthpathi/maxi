@@ -18,6 +18,7 @@ wheel_source=''
 configure=1
 launch=1
 open_hud=1
+delete_old_data=1
 
 die() { printf 'Maxi: %s\n' "$*" >&2; exit 1; }
 
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --no-configure) configure=0; shift ;;
         --no-launch) launch=0; shift ;;
         --no-hud) open_hud=0; shift ;;
+        --keep-data) delete_old_data=0; shift ;;
         --help|-h)
             printf '%s\n' 'Install Maxi for macOS (14+) and Linux.' \
                 '  --app-source PATH     Use a local Maxi.app on macOS.' \
@@ -37,7 +39,8 @@ while [[ $# -gt 0 ]]; do
                 '  --no-configure        Skip the interactive provider wizard.' \
                 '  --no-launch           Install without starting the daemon or HUD.' \
                 '  --no-hud              Start and verify the backend without opening the HUD.' \
-                'Existing provider configuration and saved memories are preserved.'
+                '  --keep-data           Keep previous temporary data, caches, and session history.' \
+                'By default, previous runtime cache, stale locks, and old history are deleted on install.'
             exit 0 ;;
         *) die "Unknown option: $1" ;;
     esac
@@ -108,6 +111,32 @@ if [[ "$OS" == "Darwin" ]]; then
     mkdir -p "$apps_dir"
 fi
 
+# Stop any running Maxi daemon before proceeding
+if [[ -f "$install_dir/daemon.pid" ]]; then
+    old_pid="$(cat "$install_dir/daemon.pid" 2>/dev/null || true)"
+    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+        printf 'Stopping existing Maxi daemon (PID %s)…\n' "$old_pid"
+        kill "$old_pid" 2>/dev/null || true
+        for _ in 1 2 3; do
+            if ! kill -0 "$old_pid" 2>/dev/null; then break; fi
+            sleep 0.5
+        done
+        if kill -0 "$old_pid" 2>/dev/null; then
+            kill -9 "$old_pid" 2>/dev/null || true
+        fi
+    fi
+fi
+if [[ "$OS" == "Linux" ]] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop maxi 2>/dev/null || true
+fi
+
+# Clean previous runtime data and cache on curl install
+if [[ "$delete_old_data" -eq 1 ]]; then
+    printf 'Cleaning previous runtime data, cache, and temporary files…\n'
+    rm -rf "$install_dir/cache" "$install_dir/tmp" "$install_dir/history.jsonl" "$install_dir"/*.sock 2>/dev/null || true
+    rm -f "$install_dir/daemon.pid" "$install_dir/daemon.port" "$install_dir/hud.pid" "$install_dir/daemon.log" 2>/dev/null || true
+fi
+
 # 2. Setup standalone uv & managed Python 3.12 (no root / sudo required)
 uv_bin="$install_dir/tools/uv"
 if [[ ! -x "$uv_bin" ]]; then
@@ -121,7 +150,10 @@ export UV_PYTHON_DOWNLOADS=automatic
 export UV_NO_CONFIG=1
 venv="$install_dir/venv"
 if [[ ! -x "$venv/bin/python" ]]; then
-    [[ ! -e "$venv" ]] || die "An incomplete environment exists at $venv. Move it aside and retry."
+    if [[ -e "$venv" ]]; then
+        printf 'Removing incomplete virtual environment at %s…\n' "$venv"
+        rm -rf "$venv"
+    fi
     printf 'Preparing Python 3.12 (downloaded automatically if needed)…\n'
     "$uv_bin" venv --managed-python --python 3.12 --seed "$venv"
 fi
@@ -224,6 +256,10 @@ elif [[ "$OS" == "Linux" ]]; then
     if [[ -n "${binary_source:-}" && -f "$binary_source" ]]; then
         printf 'Installing Linux binary from %s…\n' "$binary_source"
         mkdir -p "$bin_dir"
+        if [[ -e "$bin_dir/maxi-gui" ]]; then
+            printf 'Replacing existing binary at %s/maxi-gui…\n' "$bin_dir"
+            rm -f "$bin_dir/maxi-gui"
+        fi
         install -m 755 "$binary_source" "$bin_dir/maxi-gui"
         printf 'Installed Linux binary: %s/maxi-gui\n' "$bin_dir"
     else
@@ -264,7 +300,7 @@ DEBUG=false
 # Start a compatible server and install this model before using Maxi.
 OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_API_KEY=ollama
-OPENAI_MODEL=gemma2:31b-cloud
+OPENAI_MODEL=gemma4:31b-cloud
 
 # Whisper-compatible speech transcription. Set a real provider key for voice.
 VOICE_BASE_URL=https://api.groq.com/openai/v1
@@ -283,6 +319,14 @@ EOF
     fi
     chmod 600 "$install_dir/.env"
     fresh_config=1
+else
+    # Update existing configuration: ensure default model is gemma4:31b-cloud
+    if grep -q "^OPENAI_MODEL=" "$install_dir/.env"; then
+        sed -i.bak -E 's/^OPENAI_MODEL=.*/OPENAI_MODEL=gemma4:31b-cloud/' "$install_dir/.env" 2>/dev/null || true
+        rm -f "$install_dir/.env.bak"
+    else
+        echo 'OPENAI_MODEL=gemma4:31b-cloud' >> "$install_dir/.env"
+    fi
 fi
 
 if [[ ! -f "$install_dir/mcp_config.json" ]]; then
@@ -300,7 +344,11 @@ for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
 done
 
 printf '\nCLI: %s\n' "$bin_dir/maxi"
-printf 'Existing configuration, chats, and saved memories were preserved.\n'
+if [[ "$delete_old_data" -eq 1 ]]; then
+    printf 'Old cache and temporary session data cleared. Configuration updated.\n'
+else
+    printf 'Existing configuration, chats, and saved memories were preserved.\n'
+fi
 
 # 8. Interactive Configuration Wizard
 if [[ "$configure" -eq 1 && "$fresh_config" -eq 1 ]]; then

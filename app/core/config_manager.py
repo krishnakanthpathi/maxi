@@ -19,7 +19,7 @@ PRESETS = {
         "description": "Local offline LLM running on port 11434 with zero API costs",
         "llm_url": "http://localhost:11434/v1",
         "llm_key": "ollama",
-        "llm_model": "gemma2:31b-cloud",
+        "llm_model": "gemma4:31b-cloud",
         "requires_key": False
     },
     "groq": {

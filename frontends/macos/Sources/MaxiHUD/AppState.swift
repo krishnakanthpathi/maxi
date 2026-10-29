@@ -71,9 +71,9 @@ final class AppState: ObservableObject {
     private var lastQRModDate: Date? = nil
 
     @Published var wsConnected: Bool = false
-    @Published var currentModel: String = "gemma2:31b-cloud"
+    @Published var currentModel: String = "gemma4:31b-cloud"
     @Published var availableModels: [String] = [
-        "gemma2:31b-cloud",
+        "gemma4:31b-cloud",
         "gpt-oss:120b-cloud",
         "llama-3.3-70b-versatile",
         "meta-llama/llama-3.3-70b-instruct"
