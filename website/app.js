@@ -27,9 +27,9 @@ byId('try-demo').addEventListener('click',async()=>{
   byId('announcer').textContent='Example changed: '+examples[currentExample].title;
 });
 const install={
-  mac:{comment:'# Backend wheel first. Native app next. Python setup is automatic.',code:'curl -fsSL https://maxi-assistant.softtrout10.chatgpt.site/downloads/install.sh | bash',detail:'Wheel → app → backend health check → ready · macOS 14+'},
-  linux:{comment:'# Automated setup: uv, Python 3.12, backend wheel, and daemon service.',code:'curl -fsSL https://maxi-assistant.softtrout10.chatgpt.site/downloads/install.sh | bash',detail:'Wheel → Python via uv → systemd user service → ready · Linux (x86_64 / arm64)'},
-  windows:{comment:'# PowerShell · backend support, without a native GUI.',code:'py -m venv "$HOME\\.maxi\\venv"\n& "$HOME\\.maxi\\venv\\Scripts\\python.exe" -m pip install \\\n  "$HOME\\Downloads\\maxi_ai-0.3.0b1-py3-none-any.whl[voice]"\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" config wizard\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" start',detail:'Python 3.10+ · configure your providers · Ctrl + Space'}
+  mac:{comment:'# Backend wheel first. Native app next. Python setup is automatic.',code:'curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash',detail:'Wheel → app → backend health check → ready · macOS 14+'},
+  linux:{comment:'# Automated setup: uv, Python 3.12, backend wheel, and daemon service.',code:'curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash',detail:'Wheel → Python via uv → systemd user service → ready · Linux (x86_64 / arm64)'},
+  windows:{comment:'# PowerShell · backend support, without a native GUI.',code:'py -m venv "$HOME\\.maxi\\venv"\n& "$HOME\\.maxi\\venv\\Scripts\\python.exe" -m pip install \\\n  "https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" config wizard\n& "$HOME\\.maxi\\venv\\Scripts\\maxi.exe" start',detail:'Python 3.10+ · configure your providers · Ctrl + Space'}
 };
 // PowerShell uses a backtick for continuation, unlike the Unix shell.
 install.windows.code=install.windows.code.replace(/ \\\n/g,' `\n');

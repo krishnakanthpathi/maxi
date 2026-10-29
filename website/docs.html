@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Maxi Docs — From your first shortcut.</title>
   <meta name="description" content="Install Maxi, connect your model, set up voice and MCP tools, and understand how chats and optional memory work.">
-  <link rel="canonical" href="https://maxi-assistant.softtrout10.chatgpt.site/docs"><meta property="og:url" content="https://maxi-assistant.softtrout10.chatgpt.site/docs">
+  <link rel="canonical" href="https://github.com/krishnakanthpathi/maxi"><meta property="og:url" content="https://github.com/krishnakanthpathi/maxi">
   <meta name="theme-color" content="#f5f5f0">
   <meta property="og:title" content="Maxi Docs — From your first shortcut.">
   <meta property="og:description" content="A practical guide to your voice-controlled desktop assistant.">
@@ -21,7 +21,7 @@
     <a class="brand" href="/" aria-label="Maxi home"><svg viewBox="0 0 128 128" aria-hidden="true"><path d="M100 20H28L66 64L28 108H100"/></svg><span>maxi<span class="brand-dot">.</span></span></a>
     <span class="docs-label">/ documentation</span>
     <nav aria-label="Main navigation"><a href="/">Home</a><a href="https://github.com/krishnakanthpathi/maxi" target="_blank" rel="noopener">GitHub ↗</a></nav>
-    <a class="nav-download" href="/downloads/Maxi-0.3.0-beta.1-macos-universal.dmg" download>Download DMG <span aria-hidden="true">↓</span></a>
+    <a class="nav-download" href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/Maxi-0.3.0-beta.1-macos-universal.dmg" download>Download DMG <span aria-hidden="true">↓</span></a>
   </header>
   <div class="shell docs-layout">
     <aside class="docs-sidebar">
@@ -59,10 +59,10 @@
         <h2>Installation</h2>
         <p>The macOS installer sets up Python automatically if needed. You’ll still need an OpenAI-compatible LLM endpoint and a Whisper-compatible transcription provider for voice input.</p>
         <ul><li>The native HUD needs macOS 14+. Liquid Glass is available on macOS 26+; earlier supported versions use translucent material.</li><li>The combined installer supports Apple Silicon and Intel. No Xcode or Homebrew is needed.</li><li>This beta is not Developer ID signed or notarized. First setup needs internet access for Python and dependencies.</li></ul>
-        <div class="docs-downloads"><a href="/downloads/maxi_ai-0.3.0b1-py3-none-any.whl">Python backend <span aria-hidden="true">↓</span></a><a href="/downloads/Maxi-0.3.0-beta.1-macos-universal.dmg" download>Download macOS DMG <span aria-hidden="true">↓</span></a></div>
+        <div class="docs-downloads"><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl">Python backend <span aria-hidden="true">↓</span></a><a href="https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/Maxi-0.3.0-beta.1-macos-universal.dmg" download>Download macOS DMG <span aria-hidden="true">↓</span></a></div>
         <h3>Install everything together</h3>
         <p>Download the DMG, drag Maxi to Applications, and open it. First launch opens Terminal for setup and provider configuration. Or install with one command:</p>
-        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS</span><button type="button" data-copy aria-label="Copy one-command macOS installer">Copy ⧉</button></div><pre><code>curl -fsSL https://maxi-assistant.softtrout10.chatgpt.site/downloads/install-macos.sh | bash</code></pre></div>
+        <div class="code-block"><div class="code-heading"><span>TERMINAL · MACOS</span><button type="button" data-copy aria-label="Copy one-command macOS installer">Copy ⧉</button></div><pre><code>curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash</code></pre></div>
         <p>The installer checks release downloads, preserves existing configuration and memories, and installs the verified Python wheel first, then the compiled native app. The wheel contains no Swift source, and the app contains no Python wheel. The installer starts the Python backend directly, confirms it is healthy, and then opens the HUD. Later launches start the backend and connect the HUD after readiness. Reinstalling restarts the backend to load the new wheel. Your LLM runtime and speech provider are configured separately.</p>
         <h3>Manual backend installation</h3>
         <p>For a manual install, first install Python 3.10+ and download the Python wheel above into your Downloads folder, then run:</p>
@@ -82,8 +82,8 @@ cd maxi
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[voice]'
 .venv/bin/maxi hud --rebuild</code></pre></div>
-        <details class="doc-details"><summary>Using Linux or Windows?</summary><p>The backend and platform shortcuts are supported. On Linux, run the universal installer directly:</p><div class="code-block"><div class="code-heading"><span>LINUX · ONE COMMAND</span><button type="button" data-copy aria-label="Copy Linux installation command">Copy ⧉</button></div><pre><code>curl -fsSL https://maxi-assistant.softtrout10.chatgpt.site/downloads/install.sh | bash</code></pre></div><p>On Windows, download the same wheel and use PowerShell:</p><div class="code-block"><div class="code-heading"><span>POWERSHELL · WINDOWS</span><button type="button" data-copy aria-label="Copy Windows installation commands">Copy ⧉</button></div><pre><code>py -m venv "$HOME\.maxi\venv"
-&amp; "$HOME\.maxi\venv\Scripts\python.exe" -m pip install "$HOME\Downloads\maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
+        <details class="doc-details"><summary>Using Linux or Windows?</summary><p>The backend and platform shortcuts are supported. On Linux, run the universal installer directly:</p><div class="code-block"><div class="code-heading"><span>LINUX · ONE COMMAND</span><button type="button" data-copy aria-label="Copy Linux installation command">Copy ⧉</button></div><pre><code>curl -fsSL https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/scripts/install.sh | bash</code></pre></div><p>On Windows, download the same wheel and use PowerShell:</p><div class="code-block"><div class="code-heading"><span>POWERSHELL · WINDOWS</span><button type="button" data-copy aria-label="Copy Windows installation commands">Copy ⧉</button></div><pre><code>py -m venv "$HOME\.maxi\venv"
+&amp; "$HOME\.maxi\venv\Scripts\python.exe" -m pip install "https://github.com/krishnakanthpathi/maxi/releases/download/v0.3.0-beta.1/maxi_ai-0.3.0b1-py3-none-any.whl[voice]"
 &amp; "$HOME\.maxi\venv\Scripts\maxi.exe" config wizard
 &amp; "$HOME\.maxi\venv\Scripts\maxi.exe" start</code></pre></div></details>
         <p class="doc-caption">Add your virtual environment’s executable directory to PATH to use the shorter <code>maxi</code> commands below. On macOS/Linux, that directory is <code>~/.maxi/venv/bin</code>.</p>
