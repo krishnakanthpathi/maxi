@@ -804,6 +804,8 @@ class MaxiVoiceService:
         with self.lock:
             if not self.is_ptt_recording:
                 return
+            if time.time() - self.ptt_press_time < 0.35:
+                return
             self.is_ptt_recording = False
             self.is_hands_free_locked = False
             chunks = list(self.ptt_audio_buffer)

@@ -97,14 +97,27 @@ async def stop_voice():
     return {"status": "processing"}
 
 
+_last_voice_toggle = 0.0
+
+
 @router.post("/voice/toggle")
 async def toggle_voice():
-    """Toggle voice recording on/off via HUD pill tap."""
+    """Toggle voice recording on/off with debouncing to prevent key-repeat glitches."""
+    global _last_voice_toggle
+    now = time.monotonic()
     from app.core.voice_service import voice_service
+
+    if now - _last_voice_toggle < 0.45:
+        return {"status": "recording" if voice_service.is_ptt_recording else "processing", "debounced": True}
+
     if voice_service.is_ptt_recording:
+        if time.time() - voice_service.ptt_press_time < 0.4:
+            return {"status": "recording", "debounced": True}
+        _last_voice_toggle = now
         voice_service.stop_recording()
         return {"status": "processing"}
     else:
+        _last_voice_toggle = now
         voice_service.start_recording(locked=True)
         return {"status": "recording"}
 
