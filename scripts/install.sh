@@ -7,6 +7,7 @@ release='0.3.0-beta.1'
 python_version='0.3.0b1'
 uv_version='0.11.32'
 release_url="https://github.com/krishnakanthpathi/maxi/releases/download/v${release}"
+raw_dist_url="https://raw.githubusercontent.com/krishnakanthpathi/maxi/main/dist"
 archive_name="Maxi-${release}-macos-universal.zip"
 wheel_name="maxi_ai-${python_version}-py3-none-any.whl"
 install_dir="${MAXI_INSTALL_DIR:-$HOME/.maxi}"
@@ -99,10 +100,15 @@ if [[ -n "$wheel_source" ]]; then
     verify "$wheel" "$(dirname "$wheel")/SHA256SUMS"
 else
     printf 'Downloading the Python backend wheel…\n'
-    fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
-    fetch "$release_url/$wheel_name" "$work_dir/$wheel_name"
-    wheel="$work_dir/$wheel_name"
-    verify "$wheel" "$work_dir/SHA256SUMS"
+    if fetch "$raw_dist_url/SHA256SUMS" "$work_dir/SHA256SUMS" 2>/dev/null && fetch "$raw_dist_url/$wheel_name" "$work_dir/$wheel_name" 2>/dev/null; then
+        wheel="$work_dir/$wheel_name"
+        verify "$wheel" "$work_dir/SHA256SUMS"
+    else
+        fetch "$release_url/SHA256SUMS" "$work_dir/SHA256SUMS"
+        fetch "$release_url/$wheel_name" "$work_dir/$wheel_name"
+        wheel="$work_dir/$wheel_name"
+        verify "$wheel" "$work_dir/SHA256SUMS"
+    fi
 fi
 
 mkdir -p "$install_dir" "$bin_dir"

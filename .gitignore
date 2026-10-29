@@ -6,14 +6,20 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+dist/*
+!dist/maxi_ai-*-py3-none-any.whl
+!dist/SHA256SUMS
+!dist/install.sh
 downloads/
 eggs/
 .eggs/
 lib/
 lib64/
 parts/
-sdist/
+sdist/*
+!dist/maxi_ai-*-py3-none-any.whl
+!dist/SHA256SUMS
+!dist/install.sh
 var/
 wheels/
 share/python-wheels/
@@ -44,7 +50,10 @@ Thumbs.db
 .build/
 *.xcodeproj
 *.xcworkspace
-frontends/macos/dist/
+frontends/macos/dist/*
+!dist/maxi_ai-*-py3-none-any.whl
+!dist/SHA256SUMS
+!dist/install.sh
 
 # Local runtime state is never part of a release.
 data/
